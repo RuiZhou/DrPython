@@ -1,0 +1,2002 @@
+#lang plai-typed
+
+(require "python-core-syntax.rkt"
+         "python-primitives.rkt"
+         "python-helper.rkt"
+         "python-lib.rkt";ray added, for loc of prmitves
+         )
+
+(require (typed-in racket (string<? : (string string -> boolean))))
+(require (typed-in racket (string>? : (string string -> boolean))))
+(require (typed-in racket (string<=? : (string string -> boolean))))
+(require (typed-in racket (string>=? : (string string -> boolean))))
+;(require (typed-in racket (string-replace : (string string  string-> string))))
+;(require (typed-in racket (hash-for-each : (hash?  proc -> void)))) 
+
+#|
+procedure
+(string-replace str from to [#:all all?]) → string?
+  str : string?
+  from : (or/c string? regexp?)
+  to : string?
+  all? : any/c = #t
+
+|#
+;(require (typed-in racket 
+;                  (string-replace : (string  (or/c string regexp) string [#:all  any/c = #t]-> string))))
+
+;debug system
+(define last-interped (CNone))
+
+(define (verify-store [st : (hashof Location VObjType)]  [s : string] ) : string
+  (verify-store-aux (hash-keys st) st s))
+
+
+(define (verify-store-aux [keys : (listof Location)] [st : (hashof Location VObjType)]  [s : string] ) : string
+  (cond
+    [(empty? keys) s]
+    
+    [(and
+      ;ignore
+      (not (equal? (first keys) (VObj-id (some-v (hash-ref store (first keys))))))
+      (not (equal? 'undefined (VObj-type (some-v (hash-ref store (first keys))))))
+      (not (isSimpleType (VObj-type (some-v (hash-ref store (first keys))))))
+      
+      ;select
+      (equal? 'dict (VObj-type (some-v (hash-ref store (first keys)))))
+      
+      )
+     (verify-store-aux (rest keys) st   
+                       (constr  (list s
+                                      "loc-err :"
+                                      (number->string (first keys) )
+                                      "<>"
+                                      (pretty-obj (some-v (hash-ref st (first keys))))
+                                      "\n")))]
+    [else 
+     (verify-store-aux  (rest keys) st  s)]))
+
+
+(define (wrap-interp [v-answer : VAnswer]) : void
+  (type-case VAnswer v-answer
+    [VResult (v)  (void) ]
+    [VReturn (v)   (error 'interp  "Syntax Error1")]
+    [VError (v) 
+            (error 'interp  
+                   (constr  (list "\nException Fall through:\n" 
+                                  "Ex Form: " (symbol->string (VObj-type v)) 
+                                  "\nEx Msg: " 
+                                  (list->string (VStr-s (VObj-value v))) "\nStack:")))]))
+;[VError (v) (display (constr (list "\nException: "  (symbol->string (VObj-type v)) "\n")))]))
+
+
+
+;(define (hash-set-update-obj!    [s : (hashof Location VObjType)]  [l : Location]  [v : VObjType]) : void
+;  (begin
+;  (set! v (VObj 
+;          l
+;          (VObj-type v)
+;          (VObj-class_loc v)
+;          (VObj-value v)))
+;  (hash-set! s l v)))
+
+
+
+(define (isPredefined [x : symbol]) : boolean
+  (or
+   (equal? x 'str)
+   
+   (equal? x 'int)
+   
+   (equal? x 'bool)
+   
+   (equal? x 'list)
+   
+   (equal? x 'dict)
+   
+   ))
+
+(define (isSimpleType [x : symbol]) : boolean
+  (or
+   (equal? x 'str)
+   
+   (equal? x 'int)
+   
+   (equal? x 'bool)
+   
+   (equal? x 'float)
+   ))
+
+
+(define (ListVal->list [tp : ListVal] ) : (listof VAnswer) 
+  (cond
+    [(mt? tp) (list)]
+    [else
+     (cons  (VResult (node-value tp )) (ListVal->list (node-next tp)))]))
+
+
+(define (get-arg-values [x : (listof symbol)] [args : (listof CExp)]) : (listof VAnswer)
+  (cond
+    ;[(empty? x) (list)]
+    [(empty? args) (list)]
+    [(CId? (first args)) 
+     (if
+      (equal? (CId-x (first args)) '--tupled-value--)
+      (begin
+        ; (display x)
+        ;(display args)
+        ;(display "\n")
+        (ListVal->list  (VList-l (VObj-value (VResult-v (interp (first args))))))
+        ) 
+      (begin
+        ; (display "haha")
+        (map interp args)))]
+    [else
+     (begin
+       ;   (display "haha")
+       (map interp args))]
+    ))
+
+
+(define (interp [expr : CExp]) : VAnswer
+  (begin
+    #|
+    (local ([define vr (verify-store store "")]) 
+    (if
+     (not (equal? ""  vr))
+     (begin 
+       (display "\n\n!!!!!CExp\n")
+       (display   last-interped)
+       
+       (display "\n messed store :\n")
+       (display " before execute :\n")
+       
+       (display expr)
+        (display " messed value :\n")
+       (display vr)
+       (error '- ""))
+   (set! last-interped expr)
+   ))
+   |#
+    
+    
+    
+    (local 
+      ([define env (first (unbox menv))])
+      (type-case CExp expr
+        [CNum (n) (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv)))) (VNum n) ))]
+        
+        [CStr (s) 
+              ;(begin (print-envs (unbox menv))
+              (VResult (make-bind-VObj 'str  ( VObj-id (VResult-v (lookup 'str (unbox menv)))) (VStr s) ))]    
+        
+        [CError (tag e) 
+                (local 
+                  ([define exp (interp e)])
+                  (type-case VAnswer exp
+                    [VResult (v) (VResult (make-bind-VObj tag  not_in_store (VObj-value (VResult-v exp)) ))]
+                    [VReturn (v) (error 'interp  "Syntax Error2")]
+                    [VError (v)  exp]))] ;TODO
+        
+        [CIf (t b e) 
+             (local ([define test-answer (interp t)])
+               (type-case VAnswer test-answer
+                 [VResult (v) (cond
+                                [(isTrue (VResult-v test-answer)) (interp b)]
+                                [else (interp e)])]
+                 [VReturn (v) (error 'interp  "Syntax Error3")]
+                 [VError (v)  test-answer]))]
+        
+        
+        
+        [CId (x)
+             (begin
+               ;  (display "LOOK FOR ") 
+               
+               ; (display x) 
+               
+               ;  (display "\n") 
+               
+               
+               ;  (display "envs:\n") 
+               ;  (print-envs (unbox menv))
+               
+               ;(display "store:\n")
+               ;(print-store)
+               
+               ;(display "\n")
+               
+               (lookup x (unbox menv)))]
+        
+        #|
+      [CId (x)
+           (type-case VAnswer (lookup x (unbox menv))
+             [VResult (v) 
+                  (VObj-    
+                      ]
+             [VReturn (v) (error 'interp  "Syntax Error3")]
+             [VError (v)  test-answer]))]
+      |#
+        [CLet (x bind body)
+              (local
+                ([define exp (interp bind)])
+                (type-case VAnswer exp
+                  [VReturn (v) (error 'interp  "Syntax Error4")]
+                  [VError (v)  exp]
+                  [VResult (v) 
+                           (if
+                            (isSimpleType (VObj-type v))
+                            (local
+                              ([define loc (next-loc)]
+                               [define new-env (hash-set env x loc)])
+                              (begin   
+                                
+                                (push-frame new-env)
+                                (hash-set! store loc v)
+                                (local
+                                  ([define value (interp body)])
+                                  (begin
+                                    (pop-frame)
+                                    value))))
+                            (begin
+                              (push-frame (hash-set env x (VObj-id v)))
+                              (local
+                                ([define value (interp body)])
+                                (begin
+                                  (pop-frame)
+                                  value))))]))]
+        
+        [CSeq (e1 e2)
+              (local ([define e1-value (interp e1)])
+                (type-case VAnswer e1-value
+                  [VReturn (v) (VResult v)]
+                  [VError (v)  e1-value]
+                  [VResult (v) (interp e2)]))]
+        
+        
+        
+        [CApp (fun arges)
+              (begin
+                ;     (display   "\ncalling : ")
+                ;   (display fun)
+                ;  (display", with : "  )
+                ;  (display arges)
+                ;  (display "\n")
+                ;(display " envs: \n")
+                
+                ;  (print-envs (unbox menv))
+                
+                ;(display " store: \n")
+                
+                ;(print-store)
+                (local
+                  ([define funAnswer (interp fun)])
+                  (type-case VAnswer funAnswer
+                    [VReturn (v) (error 'interp  "Syntax Error5")]
+                    [VError (v)  funAnswer]
+                    [VResult (funObj) 
+                             (cond 
+                               
+                               [(and (CId? fun)
+                                     (isPredefined (CId-x fun)))
+                                
+                                (begin 
+                                  ; (display  (constr (list "constructing : "  (symbol->string   (CId-x fun)) ", with : "  )))
+                                  ; (display arges)
+                                  ; (display "\n")
+                                  ; (display
+                                  (interp   
+                                   (CApp 
+                                    (CGetField fun '__init__)
+                                    arges))
+                                  ;))
+                                  ; (display "\n")
+                                  ; (error 'interp "??????????")
+                                  
+                                  )
+                                
+                                ]
+                               
+                               [;(symbol=? (VObj-type funObj) 'func); a lamba function
+                                else
+                                (begin 
+                                  ;  (display   "calling : ")
+                                  ; (display fun)
+                                  ;(display", with : "  )
+                                  ; (display arges)
+                                  ; (display "\n")
+                                  (type-case CVal (VObj-value funObj)
+                                    [VClosure (e a b m)
+                                              (local 
+                                                [(define arg-answers (get-arg-values  (VClosure-args (VObj-value (VResult-v funAnswer))) arges))
+                                                 ;(map interp arges))
+                                                 (define bad-syntax (filter VReturn? arg-answers))
+                                                 (define errors (filter VError? arg-answers))]
+                                                (cond
+                                                  [(not (empty? bad-syntax )) (error 'interp  "Syntax Error6")]
+                                                  [(not (empty? errors )) (first errors)]
+                                                  [else (local 
+                                                          [(define argvs (map VResult-v arg-answers))]
+                                                          #|
+                                                      (begin
+                                                        (push-frame 
+                                                         (bind-args a argvs e))
+                                                        (local
+                                                          ([define value (interp b)])
+                                                          (begin 
+                                                            (pop-frame)
+                                                            (type-case VAnswer value
+                                                              [VReturn (v) (VResult v)]
+                                                              [VError (v)  value]
+                                                              [VResult (v) value]))))
+                                                      
+                                                      |#
+                                                          (type-case EnvOrError (bind-args a argvs e)
+                                                            [isEnv(ise)
+                                                                  (begin
+                                                                    (push-frame      ise)
+                                                                    (local
+                                                                      ([define value (interp b)])
+                                                                      (begin 
+                                                                        (pop-frame)
+                                                                        (type-case VAnswer value
+                                                                          [VReturn (v) (VResult v)]
+                                                                          [VError (v)  value]
+                                                                          [VResult (v) value]))))]
+                                                            [isErr(ise) ise])
+                                                          
+                                                          
+                                                          
+                                                          )]))]
+                                    
+                                    [else (error 'interp "Not a closure")]))])])))]
+        
+        
+        
+        
+        
+        
+        [CLambda (args body) (VResult (make-bind-VObj 'func  not_in_store  (VClosure env args body (hash (list)) ) ))] 
+        
+        [CPrim1 (prim arg)
+                (local 
+                  ([define arg-answer (interp arg)]) 
+                  (type-case VAnswer arg-answer
+                    [VReturn (v)  (error 'interp-cprim1  "Syntax Error7")]
+                    [VError (v)  arg-answer]
+                    [VResult (v)
+                             
+                             (begin
+                               ;  (display "hello") 
+                               ; (display prim)
+                               ;  (print v)
+                               
+                               (python-prim1 prim (VResult-v arg-answer)))]))]
+        
+        
+        [CBool (b) (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool b) ))]
+        
+        [CRaise (e) 
+                (local 
+                  ([define e-answer (interp e)])
+                  (type-case VAnswer e-answer
+                    [VReturn (v)  (error 'interp  "Syntax Error8")]
+                    [VError (v)  e-answer]
+                    [VResult (v) (VError (VResult-v e-answer))]))]
+        
+        
+        
+        [CPass() (VResult (make-bind-VObj 'NoneType not_in_store  (VNone) ))] 
+        
+        [CBoolOp (op l r) (interp-CBoolOp op l r)] 
+        
+        [CUnaryOp (op operand)  (interp-CUnaryOp op operand)]
+        
+        [CBinOp (op l r)  (interp-CBinOp op l r)]
+        
+        [CEmpty? (l)
+                 (local 
+                   ([define l-answer (interp l)])
+                   (type-case VAnswer l-answer
+                     [VReturn (v)  (error 'interp  "Syntax Error9")]
+                     [VError (v)  l-answer]
+                     [VResult (v) 
+                              (VResult 
+                               (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                                               (VBool 
+                                                (cond 
+                                                  [(VStr? (VObj-value v))
+                                                   (empty? (VStr-s (VObj-value v)))]
+                                                  [(VList? (VObj-value v))
+                                                   
+                                                   (mt? (VList-l (VObj-value v)))]
+                                                  [(VDict? (VObj-value v))
+                                                   
+                                                   (empty? (hash-keys  (VDict-d (VObj-value v))))]))))]))]
+        
+        [CFirst (l)
+                (local 
+                  ([define l-answer (interp l)])
+                  (type-case VAnswer l-answer
+                    [VReturn (v)  (error 'interp  "Syntax Error10")]
+                    [VError (v)  l-answer]
+                    [VResult (v) (VResult
+                                  (if 
+                                   (VStr? (VObj-value v))
+                                   (make-bind-VObj 'str  ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                                   (VStr (list (first (VStr-s (VObj-value v))))))
+                                   (node-value (VList-l (VObj-value v)))))]))]
+        
+        [CRest (l)
+               (local 
+                 ([define l-answer (interp l)])
+                 (type-case VAnswer l-answer
+                   [VReturn (v)  (error 'interp  "Syntax Error11")]
+                   [VError (v)  l-answer]
+                   [VResult (v) (VResult 
+                                 (cond 
+                                   [(VStr? (VObj-value v))
+                                    (make-bind-VObj 'str  
+                                                    ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                                    (VStr  (rest (VStr-s (VObj-value v)))))]
+                                   [(VList? (VObj-value v))
+                                    (make-bind-VObj 'list not_in_store 
+                                                    (VList (node-next (VList-l (VObj-value v))) (VList-m (VObj-value v))))]
+                                   [(VDict? (VObj-value v))
+                                    
+                                    (make-bind-VObj 'dict not_in_store 
+                                                    (VDict
+                                                     (hash-remove (VDict-d (VObj-value v)) (first (hash-keys  (VDict-d (VObj-value v)))))))]
+                                   [else
+                                    (error 'crest "check rest")]))]))]
+        
+        
+        
+        
+        [CCompare (op left right)
+                  (interp-CCompare op left right)]
+        
+        [CNone() (VResult (make-bind-VObj 'NoneType  not_in_store  (VNone) ))]
+        
+        
+        [CDict (keys values)
+               (interp-CDict keys values   (hash empty))]
+        
+        
+        [CSet! (lhs-e v)
+               (local ([define v-answer (interp v)])
+                 (cond
+                   [(CId? lhs-e)
+                    (local ([define lhs (CId-x lhs-e) ])
+                      
+                      (type-case VAnswer v-answer 
+                        [VReturn (v)  (error 'interp  "Syntax Error12")]
+                        [VError (v) v-answer]
+                        [VResult (value)
+                                 (if (isSimpleType (VObj-type value))
+                                     (type-case (optionof Location) (hash-ref env lhs)
+                                       [some (loc)  
+                                             (begin
+                                               (hash-set! store loc value)
+                                               v-answer)]
+                                       [none () (local
+                                                  ([define newloc (next-loc)]
+                                                   [define new-env (hash-set env lhs newloc)])
+                                                  
+                                                  (begin
+                                                    (update-frame new-env )
+                                                    (hash-set! store newloc value)
+                                                    v-answer))])
+                                     
+                                     (type-case (optionof Location) (hash-ref env lhs)
+                                       [some (loc)  
+                                             (type-case (optionof VObjType) (hash-ref store loc)
+                                               [some (obj)  
+                                                     (if (equal? (VObj-type obj) 'undefined)
+                                                         (begin
+                                                           ;  (display "heres?")
+                                                           
+                                                           ; (display lhs)
+                                                           
+                                                           ; (display "\n")
+                                                           (hash-set! store loc 
+                                                                      (VObj loc
+                                                                            (VObj-type value)
+                                                                            
+                                                                            (VObj-class_loc value)
+                                                                            (VObj-value value)
+                                                                            
+                                                                            )
+                                                                      )
+                                                           v-answer)
+                                                         (local
+                                                           ([define new-env (hash-set env lhs (VObj-id value))])
+                                                           (begin
+                                                             ; (display "here?")
+                                                             (update-frame new-env )
+                                                             v-answer)))]
+                                               [none () 
+                                                     (local
+                                                       ([define new-env (hash-set env lhs (VObj-id value))])
+                                                       (begin
+                                                         ; (display "herea?")
+                                                         (update-frame new-env )
+                                                         v-answer))])  ]
+                                       [none () 
+                                             (local
+                                               ([define new-env (hash-set env lhs (VObj-id value))])
+                                               (begin
+                                                 (update-frame new-env )
+                                                 v-answer))]))]))]
+                   [(CSubscript? lhs-e)
+                    (begin
+                      ;     (display "\ntrying to set ")
+                      ;   (display (CSubscript-object lhs-e))
+                      
+                      ;   (display "\ntrying to set ")
+                      ;    (display   (interp  (CSubscript-object lhs-e)))
+                      ;  (display "\nindex ")
+                      ; (display (CSubscript-index lhs-e))
+                      ;(display "\nvalue ")
+                      ;(display v-answer)
+                      
+                      ;set
+                      (local ([define object (interp (CSubscript-object lhs-e))]
+                              [define index (interp (CSubscript-index lhs-e))]
+                              (define value v-answer))
+                        (type-case VAnswer object
+                          [VError(err) object]
+                          [VReturn(ret) (mkerr "11") ]
+                          [VResult(oo)
+                                  (type-case VAnswer index
+                                    [VError(err) index]
+                                    [VReturn(ret) (mkerr "22") ]
+                                    [VResult(ii)
+                                            (type-case VAnswer v-answer
+                                              [VError(err) v-answer]
+                                              [VReturn(ret) (mkerr "22") ]
+                                              [VResult(vv)  
+                                                      
+                                                      (cond
+                                                        [(VDict? (VObj-value oo))
+                                                         (begin
+                                                           ;   (display "\nenvz;\n")
+                                                           
+                                                           ;  (print-envs (unbox menv))
+                                                           ;  (display "\nenv...;\n")
+                                                           ;(display "\n store\n")
+                                                           ;(print-store)
+                                                           ;  (display "\n store...\n")
+                                                           ;(display oo)
+                                                           
+                                                           ; (display "\n")
+                                                           
+                                                           ;  (display ii)
+                                                           ; (display vv)
+                                                           ;  (display "\nhere\n")
+                                                           (hash-set!
+                                                            store
+                                                            (VObj-id oo)
+                                                            (VObj 
+                                                             (VObj-id oo)
+                                                             (VObj-type oo)
+                                                             
+                                                             (VObj-class_loc oo)
+                                                             
+                                                             (VDict (hash-set (VDict-d (VObj-value oo)) ii vv))))
+                                                           (interp (CSubscript-object lhs-e)))
+                                                         ]
+                                                        [else
+                                                         (error '?? "adadasdasda")])])])])))]
+                   
+                   [else
+                    (error 'set "immediate value")]))]
+        
+        
+        [CDelete (target  )
+                 (cond
+                   
+                   [(CSubscript? target)
+                    (begin
+                      (local ([define object (interp (CSubscript-object target))]
+                              [define index (interp (CSubscript-index target))]
+                              )
+                        (type-case VAnswer object
+                          [VError(err) object]
+                          [VReturn(ret) (mkerr "11") ]
+                          [VResult(oo)
+                                  (type-case VAnswer index
+                                    [VError(err) index]
+                                    [VReturn(ret) (mkerr "22") ]
+                                    [VResult(ii)
+                                            (cond
+                                              [(VDict? (VObj-value oo))
+                                               (begin
+                                                 ;   (display "\nenvz;\n")
+                                                 
+                                                 ;  (print-envs (unbox menv))
+                                                 ;  (display "\nenv...;\n")
+                                                 ;(display "\n store\n")
+                                                 ;(print-store)
+                                                 ;  (display "\n store...\n")
+                                                 ;(display oo)
+                                                 
+                                                 ; (display "\n")
+                                                 
+                                                 ;  (display ii)
+                                                 ; (display vv)
+                                                 ;  (display "\nhere\n")
+                                                 (hash-set!
+                                                  store
+                                                  (VObj-id oo)
+                                                  (VObj 
+                                                   (VObj-id oo)
+                                                   (VObj-type oo)
+                                                   
+                                                   (VObj-class_loc oo)
+                                                   
+                                                   (VDict (hash-remove (VDict-d (VObj-value oo)) ii ))))
+                                                 (interp (CSubscript-object target)))
+                                               ]
+                                              [else
+                                               (error '?? "adadasdasda")])])])))]
+                   [else
+                    (error '?? "adadasdasda")]
+                   )]
+        
+        
+        
+        
+        [CCopy! (lhs v)
+                (local ([define v-answer (interp v)])
+                  (type-case VAnswer v-answer 
+                    [VReturn (v)  (error 'interp  "Syntax Error12")]
+                    [VError (v) v-answer]
+                    [VResult (value)
+                             (type-case (optionof Location) (hash-ref env lhs)
+                               [some (loc)  
+                                     (begin
+                                       (hash-set! store loc 
+                                                  (VObj  loc 
+                                                         (VObj-type value)
+                                                         (VObj-class_loc value)
+                                                         (VObj-value value)))
+                                       v-answer)]
+                               [none () (local
+                                          ([define newloc (next-loc)]
+                                           [define new-env (hash-set env lhs newloc)])
+                                          
+                                          (begin
+                                            (update-frame new-env )
+                                            (hash-set! store newloc (VObj  newloc 
+                                                                           (VObj-type value)
+                                                                           (VObj-class_loc value)
+                                                                           (VObj-value value)))
+                                            v-answer))])]))]
+        
+        
+        [CReturn (v)
+                 (local ([define v-answer  (interp v)])
+                   (type-case VAnswer v-answer
+                     [VResult (v) (VReturn v)]
+                     [VReturn (v)  (error 'interp  "Syntax Error13")]
+                     [VError (v) v-answer]))]
+        [CStrId(p) 
+               (local ([define p-answer  (interp p)])
+                 (type-case VAnswer p-answer
+                   [VResult (v) (lookup  
+                                 (string->symbol  (list->string (VStr-s (VObj-value v))))
+                                 (unbox menv))]
+                   [VReturn (v)  (error 'interp  "Syntax Error13_2")]
+                   [VError (v) p-answer]))]
+        
+        [CGetField (o s)
+                   (local ([define v-answer  (interp o)])
+                     (type-case VAnswer v-answer
+                       [VResult (v) 
+                                (type-case CVal (VObj-value v)
+                                  
+                                  [VClosure (env args body members)
+                                            (lookup s (list members))]
+                                  [VMembers (ct m);user defined
+                                            (local 
+                                              ([define vr (some-v (hash-ref store (VObj-class_loc v)))]) ;TODO!
+                                              ;(lookup (VObj-type v) (unbox menv) )])
+                                              ;(type-case VAnswer vclass
+                                              ; [VError (er) vclass] 
+                                              ;[VReturn (er) (error 'interp "not found ")]
+                                              ;[VResult(vr)
+                                              (lookup s (list m (VClosure-members (VObj-value vr)))))]
+                                  
+                                  [else 
+                                   (begin
+                                     ;  (display "looking for :")
+                                     ;  (display  (VObj-class_loc v))
+                                     ;  (print-store)
+                                     (local 
+                                       ([define vclass ;(hash-ref store (VObj-class_loc v))]) TODO!
+                                          (lookup (VObj-type v) (unbox menv) )])
+                                       (type-case VAnswer vclass
+                                         [VError (er) vclass] 
+                                         [VReturn (er) (error 'interp "not found ")]
+                                         [VResult(vr)
+                                                 (lookup s (list  (VClosure-members (VObj-value vr))))])))])]
+                       
+                       [VReturn (v)  (error 'interp  "Syntax Error15")]
+                       [VError (v) v-answer]))]
+        
+        
+        ; Interp [CClass (n : symbol) (b : CExp) (vs : (listof symbol))]       
+        ; to 
+        ; [VClosure (env : Env) (args : (listof symbol)) (body : CExp) (members : Env)]
+        [CClass (n b vs)
+                (begin
+                  
+                  ; (print-envs (unbox menv))
+                  
+                  ; (display "env:\n")
+                  ;  (print-env env)
+                  ;  (display "\n")
+                  
+                  ;(print-store)
+                  (local 
+                    ;class tag ?? just use the symbol?
+                    ;([define class_tag (string->symbol (string-append "class: " (symbol->string n)))])
+                    ([define class_loc (next-loc)]
+                     [define class_tag n])
+                    (VResult
+                     (local ([define obj 
+                               (VObj class_loc  'type; class ... 
+                                     not_in_store 
+                                     (local
+                                       ; the actual colosure which includes the constructor function and the 
+                                       ; static memebers
+                                       ([define constructor
+                                          (VClosure 
+                                           env ; make a copy of current VAnswerenvironment
+                                           empty; empty means take no parameter in constructor
+                                           (CInstance class_tag class_loc)  ;body to make a new object;TODO need fix
+                                           (begin  ; the static members
+                                             ;first we push a empty env
+                                             (push-frame env)
+                                             ;now add all the hosted variable as undefined
+                                             ;(begin (add-undefined-to-store)
+                                             (begin (bind-hoisted-variables vs)
+                                                    (local ([define v-answer  (interp b)])
+                                                      (type-case VAnswer v-answer
+                                                        [VResult (v) (first (unbox menv))]
+                                                        [VReturn (v)  (error 'interp  "Syntax Error16")]
+                                                        [VError (v) 
+                                                                (begin (display b)
+                                                                       (error 'interp  "Syntax Error162"))])))))])
+                                       (begin (pop-frame)   constructor)))])
+                       (begin
+                         (hash-set! store class_loc obj)
+                         obj)))))]
+        
+        
+        
+        
+        #|
+      ; Interp [CClass (n : symbol) (b : CExp) (vs : (listof symbol))]       
+      ; to 
+      ; [VClosure (env : Env) (args : (listof symbol)) (body : CExp) (members : Env)]
+      [CClass (n b vs)
+              (local 
+                ;class tag ?? just use the symbol?
+                ;([define class_tag (string->symbol (string-append "class: " (symbol->string n)))])
+                ([define class_tag n])
+                (local ([define loc (next-loc)])
+                (VResult
+                 (make-bind-VObj  'type; class ... 
+                       not_in_store 
+                       (local
+                         ; the actual colosure which includes the constructor function and the 
+                         ; static memebers
+                         ([define constructor
+                            (VClosure 
+                             env ; make a copy of current VAnswerenvironment
+                             empty; empty means take no parameter in constructor
+                             (CInstance class_tag loc)  ;body to make a new object
+                             (begin  ; the static members
+                               ;first we push a empty env
+                               (push-frame (hash empty))
+                               ;now add all the hosted variable as undefined
+                               ;(begin (add-undefined-to-store)
+                                      (begin (bind-hoisted-variables vs)
+                                             (local ([define v-answer  (interp b)])
+                                               (type-case VAnswer v-answer
+                                                 [VResult (v) (first (unbox menv))]
+                                                 [VReturn (v)  (error 'interp  "Syntax Errorc1")]
+                                                 [VError (v) 
+                                                  (begin (display b)
+                                                  (error 'interp  "Syntax Error162"))])))))])
+                         (begin (pop-frame) ; pop the old  frame
+                                ;(local ([define loc (next-loc)])
+                                  (begin; bind the classinto env 
+                                    (update-frame 
+                                     (hash-set env class_tag loc))
+                                    (begin ; write the class into store
+                                      (hash-set! store loc  
+                                                 (VObj  not_in_store   'type  not_in_store  constructor))
+                                      constructor))))))))] 
+      
+      |#
+        [CInstance (t l) 
+                   ;(local 
+                   ; ([define found (lookup t (unbox menv))])
+                   ;(type-case  VAnswer found
+                   ; [VResult (v) 
+                   (VResult 
+                    (make-bind-VObj t l 
+                                    ; (string->symbol 
+                                    ; (string-append "instance of" 
+                                    ;               (symbol->string t)))
+                                    (VMembers t (hash (list)))))]
+        ;[VReturn (v)  (error 'interp  "Syntax Error")]
+        ;[VError (v) found]))
+        
+        
+        
+        
+        ;    [none () (error 'interp (string-append "Class not exist: " (symbol->string t)))])]
+        
+        ;interp the try and exception
+        [CTryEx (t eh orelse)
+                (local ([define v-answer  (interp t)])
+                  (type-case VAnswer v-answer
+                    [VResult (v)  (interp orelse) ]
+                    [VReturn (v)  (error 'interp  "Syntax Error15")];todo???
+                    [VError (v) 
+                            ;first bind the exception
+                            (begin
+                              ;(print-envs (unbox menv))
+                              ;(display "\n")
+                              ;(print-store)
+                              ;(display "\n")
+                              
+                              ;solution 1
+                              ;           (interp 
+                              ;           (CLet 'try-exception (CInstance (VObj-type v) not_in_store) eh)))]))] ;??
+                              ;solution2
+                              ;error is not a simple typle
+                              (push-frame (hash-set env 'try-exception (VObj-id v)))
+                              (local
+                                ([define value (interp eh)])
+                                (begin
+                                  (pop-frame)
+                                  value)))]))]
+        
+        
+        [CFinally (t f)
+                  (local ([define v-answer  (interp t)])
+                    (type-case VAnswer v-answer
+                      [VResult (v)  (interp f) ]
+                      [VReturn (v)  (error 'interp  "Syntax Error15")];todo???
+                      [VError (v) 
+                              (begin (interp f) (interp (CRaise  (CInstance (VObj-type v) not_in_store))))]))]
+        
+        
+        [CUndefined() 
+                   (VResult
+                    (make-bind-VObj 'undefined not_in_store
+                                    (VNone)))] 
+        
+        [CList(b) 
+              (VResult
+               (make-bind-VObj 'list not_in_store
+                               (VList (mt) b)))] 
+        
+        [CCons (v r) 
+               (local 
+                 ([define v-answer (interp v)]
+                  [define r-answer (interp r)])
+                 (type-case VAnswer v-answer
+                   [VReturn (vobj)  (error 'interp  "Syntax Error15")];todo???
+                   [VError (vobj) v-answer] 
+                   [VResult (vobj)
+                            (type-case VAnswer r-answer
+                              [VReturn (robj)  (error 'interp  "Syntax Error15")];todo???
+                              [VError (robj) r-answer] 
+                              [VResult (robj) 
+                                       (VResult
+                                        (make-bind-VObj 'list not_in_store
+                                                        (VList (node  vobj
+                                                                      (VList-l (VObj-value robj))) (VList-m (VObj-value robj)))))])]))]
+        
+        [CIsInstance (i c)
+                     (begin ;(print-envs (unbox menv))
+                       ;(print-store)
+                       (local 
+                         ([define i-answer (interp i)]
+                          [define c-answer (interp c)])
+                         (type-case VAnswer i-answer
+                           [VReturn (iobj)  (error 'interp  "Syntax Error15a")];todo???
+                           [VError (iobj) i-answer] 
+                           [VResult (iobj)
+                                    (type-case VAnswer c-answer
+                                      [VReturn (cobj)  (error 'interp  "Syntax Error15a")];todo???
+                                      [VError (cobj) c-answer] 
+                                      [VResult (cobj) 
+                                               (if 
+                                                (equal? (VObj-class_loc iobj) (VObj-id cobj))
+                                                (VResult
+                                                 (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv))))
+                                                                 (VBool #t)))
+                                                
+                                                (begin
+                                                  ;(display (constr (list "!!" 
+                                                  ;                           (symbol->string (VObj-type iobj))
+                                                  
+                                                  ;                          (symbol->string (CId-x c))
+                                                  
+                                                  ;                         (number->string (VObj-class_loc iobj)) 
+                                                  ;                        (number->string (VObj-id cobj)  ))))
+                                                  (VResult
+                                                   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv))))
+                                                                   (VBool #f)))))])])))]
+        
+        
+        
+        
+        [CSubscript(o i)
+                   (local 
+                     ([define o-answer (interp o)]
+                      [define i-answer (interp i)])
+                     (type-case VAnswer o-answer
+                       [VReturn (oobj)  (error 'interp  "Syntax Eqrror15a")];todo???
+                       [VError (oobj) o-answer] 
+                       [VResult (oobj)
+                                (type-case VAnswer i-answer
+                                  [VReturn (iobj)  (error 'interp  "Syntwqax Error15a")];todo???
+                                  [VError (iobj) i-answer]  
+                                  [VResult (iobj)  (cond
+                                                     [(and (VList? (VObj-value oobj)) (VNum? (VObj-value iobj)))
+                                                      (VResult  
+                                                       (list-subscript-get (VList-l (VObj-value oobj)) 
+                                                                           (VNum-n (VObj-value iobj))))]
+                                                     
+                                                     [(VDict? (VObj-value oobj))
+                                                      (type-case (optionof VObjType) 
+                                                        (hash-ref (VDict-d (VObj-value oobj))   iobj  )
+                                                        [some (v) 
+                                                              
+                                                              (VResult v)]
+                                                        
+                                                        [none() (error 'Keyerror "key erros to mkae")])]
+                                                     
+                                                     [else
+                                                      (error 'interp "invalid asubscript")]
+                                                     )])]))] 
+        
+        
+        
+        ; get the id
+        [CGetObjId (o)   
+                   (local ([define o-answer  (interp o)])
+                     (type-case VAnswer o-answer
+                       [VReturn (v)  (error 'interp  "Syntax asdError15")];todo???
+                       [VError (v) o-answer]
+                       [VResult (v) (VResult (make-bind-VObj 'int 
+                                                             (VObj-id (VResult-v (lookup 'int (unbox menv)))) 
+                                                             (VNum  (VObj-id v))))]))]
+        
+        
+        
+        
+        
+        ; get the class id
+        [CGetClassId (o)
+                     (local ([define o-answer  (interp o)])
+                       (type-case VAnswer o-answer
+                         [VReturn (v)  (error 'interp  "Syntax asdError15")];todo???
+                         [VError (v) o-answer]
+                         [VResult (v) (VResult (make-bind-VObj 'int 
+                                                               (VObj-class_loc (VResult-v (lookup 'int (unbox menv)))) 
+                                                               (VNum  (VObj-id v))))]))]
+        
+        
+        
+        [CDictGet (d   k  df   )
+                  (local ([define dic (interp d)]       
+                          [define key (interp k)]
+                          [define default (interp df)])
+                    (cond
+                      [(not (VDict? (VObj-value (VResult-v dic))))
+                       (VError
+                        (make-bind-VObj 'TypeError not_in_store (VStr (string->list "No Dict"))))]
+                      [else
+                       (type-case (optionof VObjType) (hash-ref (VDict-d (VObj-value (VResult-v dic))) (VResult-v key) )
+                         [some (v) 
+                               
+                               (VResult v)]
+                         
+                         [none() default])]) )]
+        
+        
+        
+        ;[else (begin (printCExp expr) (error 'interp "dummy1" ))] 
+        
+        ))))
+
+
+
+
+(define (list-subscript-get [l :  ListVal] [index  : number]) :  VObjType
+  (cond
+    [(and  (not (mt? l)) (equal? index 0)) (node-value l)] 
+    [(mt? l)  (error 'interp "index out of bound : list") ]
+    [else
+     (list-subscript-get (node-next l) (- index 1))])) 
+
+
+
+
+#|
+; helpe method : bind undefined into the current env and store
+; we assume the location -1 is undefined 
+(define (add-undefined-to-store ) : void
+  (hash-set! store -1 (make-bind-VObj 'undefined (VNone))))
+|#
+
+; help  method to bind all the hosted variables
+(define (bind-hoisted-variables [vs : (listof symbol)] ) : void
+  (cond 
+    [(not (empty? vs)) ;; add case for no hoisted variables
+     (begin
+       (local ([define loc (next-loc)])
+         (begin   (update-frame (hash-set (first (unbox menv)) (first vs)  loc))
+                  (hash-set! store loc (make-bind-VObj 'undefined not_in_store  (VNone)))))
+       (bind-hoisted-variables (rest vs)  ))]
+    [else (void)]))
+
+
+(define (lookup [x : symbol] [envs : (listof Env)]) : VAnswer
+  
+  (local ([define the_loc (look-and-up-with-env x envs)]
+          [define error_str 
+            (if
+             (equal? x 'try-exception)
+             (VStr (string->list  "No active exception"))
+             
+             (VStr (string->list 
+                    (constr  (list "No " (number->string the_loc) " in Store: " (symbol->string x)  ) ))))]
+          )
+    
+    (cond
+      [(equal? not_in_env  the_loc) 
+       (VError (make-bind-VObj 'RuntimeError  
+                               (VObj-id (VResult-v (lookup 'RuntimeError (unbox menv)))) 
+                               error_str))] 
+      
+      [else 
+       
+       (type-case (optionof VObjType) (hash-ref store the_loc )
+         [some (v) 
+               (cond
+                 [(symbol=? (VObj-type v) 'undefined)
+                  (VError (make-bind-VObj 'RuntimeError  
+                                          (VObj-id (VResult-v (lookup 'RuntimeError (unbox menv)))) 
+                                          error_str))] 
+                 [else (VResult v)])]
+         [none();(error 'interp (string-append "Undefined  identifier : " (symbol->string x) ))]))
+              (VError (make-bind-VObj 'RuntimeError  
+                                      (VObj-id (VResult-v (lookup 'RuntimeError (unbox menv)))) 
+                                      error_str))])])))   
+
+;;; look up through levels of environments
+;;; with the current environment
+;(define (look-and-up x) : Location
+;  (look-and-up-with-env x (unbox menv)))
+
+
+;;; look up through levels of environments
+(define (look-and-up-with-env [x : symbol] [envs : (listof Env)] ) : Location
+  (cond 
+    [(empty? envs) not_in_env]; -2 
+    [else  (type-case (optionof Location) (hash-ref (first envs) x)
+             [some (l) l]
+             [none() (look-and-up-with-env x (rest envs))])]))
+
+(define (look-and-up  [x : symbol]  ) : Location
+  (look-and-up-with-env x (unbox menv)))
+
+
+
+(define not_in_env -2)
+
+(define (interp-CDict [keys : (listof CExp)] 
+                      [values : (listof CExp)] 
+                      [h : (hashof VObjType VObjType)]) :  VAnswer
+  (cond
+    [(empty?  keys) (VResult  (make-bind-VObj 'dict  ( VObj-id (VResult-v (lookup 'dict (unbox menv)))) (VDict h) ))]
+    [else
+     (local ([define  k-answer  (interp (first keys))])
+       (type-case VAnswer k-answer
+         [VReturn (k)  (error 'interp-CDict  "Syntax Error17")]
+         [VError (k)  k-answer]
+         [VResult (k) 
+                  (local ([define  v-answer  (interp (first values))])
+                    (type-case VAnswer v-answer
+                      [VReturn (v)  (error 'interp-CDict  "Syntax Error18")]
+                      [VError (v)  v-answer]
+                      [VResult (v) 
+                               (interp-CDict (rest keys) (rest values) (hash-set h k v))]))]))]))
+
+
+(define (interp-CCompare  [op : symbol] [left : CExp]  [right : CExp]) : VAnswer
+  (local ([define l-answer (interp left)]
+          [define r-answer (interp right)])
+    (type-case VAnswer l-answer
+      [VReturn (v) (error 'interp  "Syntax Error19")]
+      [VError (v)  l-answer]
+      [VResult (l-obj) 
+               (type-case VAnswer r-answer
+                 [VReturn (v) (error 'interp  "Syntax Error19")]
+                 [VError (v)  r-answer]
+                 [VResult (r-obj)
+                          (interp-CCompare-aux op l-obj r-obj)])])))
+
+
+(define (interp-CCompare-aux  [op : symbol] [l-obj : VObjType]  [r-obj : VObjType]) : VAnswer
+  (cond
+    [(symbol=? 'is op) 
+     (cond
+       [(or 
+         (equal? (VObj-type l-obj) 'int)
+         (equal? (VObj-type l-obj) 'bool)
+         (equal? (VObj-type l-obj) 'str)
+         (equal? (VObj-type l-obj) 'float))
+        (begin
+          ;  (display "Got here2\n")
+          ; (display l-obj)
+          ;  (display "Got here2\n")
+          ;(display "Got here1")
+          (interp-CCompare-aux 'eq l-obj r-obj)
+          )]
+       
+       
+       [else
+        (begin
+          ; (display "Got here3\n")
+          ;(display "Got here1")
+          (VResult (make-bind-VObj 'bool 
+                                   ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                                   (VBool  (=   (VObj-id l-obj)  (VObj-id r-obj) )) ))) ])]
+    
+    [(symbol=? 'isnot op) 
+     (cond
+       [(or 
+         (equal? (VObj-type l-obj) 'int)
+         (equal? (VObj-type l-obj) 'bool)
+         (equal? (VObj-type l-obj) 'str)
+         (equal? (VObj-type l-obj) 'float))
+        (interp-CCompare-aux 'noteq l-obj r-obj)]
+       
+       
+       [else
+        (begin
+          ; ;   (display l-obj)
+          ;  (display "\n")
+          ;   (display r-obj)
+          ;  (display "\n")
+          (VResult (make-bind-VObj 'bool 
+                                   ( VObj-id (VResult-v
+                                              (lookup 'bool (unbox menv))))  
+                                   (VBool  (not (=   (VObj-id l-obj)  (VObj-id r-obj)) )) ))) ])]
+    
+    
+    
+    
+    [(symbol=? 'in op) 
+     
+     (local ([define lstr (string->list (make-string-based-on-value (VObj-value l-obj)))]
+             [define rstr (string->list  (make-string-based-on-value (VObj-value r-obj)))]
+             )
+       
+       (begin 
+         ;  (display lstr)
+         ; (display "\n")
+         ;(display rstr)
+         ;(display "\n")
+         (VResult (make-bind-VObj 'bool 
+                                  ( VObj-id (VResult-v
+                                             (lookup 'bool (unbox menv))))  
+                                  (VBool (isSubString lstr rstr))))))]
+    
+    
+    [(symbol=? 'notin op) 
+     
+     (local ([define lstr (string->list (make-string-based-on-value (VObj-value l-obj)))]
+             [define rstr (string->list  (make-string-based-on-value (VObj-value r-obj)))]
+             )
+       
+       (begin 
+         ;  (display lstr)
+         ; (display "\n")
+         ;(display rstr)
+         ;(display "\n")
+         (VResult (make-bind-VObj 'bool 
+                                  ( VObj-id (VResult-v
+                                             (lookup 'bool (unbox menv))))  
+                                  (VBool (not (isSubString lstr rstr)))))))]
+    
+    
+    
+    [else
+     (cond 
+       [(VNum? (VObj-value l-obj))
+        (cond 
+          [(symbol=? 'noteq op)
+           
+           (cond
+             [(VNum? (VObj-value r-obj))
+              (VResult
+               (make-bind-VObj 'bool 
+                               ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                               (VBool  (not (= (VNum-n (VObj-value l-obj)) 
+                                               (VNum-n (VObj-value r-obj))))) )) ]
+             [else
+              (VResult (make-bind-VObj 'bool 
+                                       ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                                       (VBool   #t )))])]   
+          
+          [(symbol=? 'eq op)
+           
+           (cond
+             [(VNum? (VObj-value r-obj))
+              (VResult
+               (make-bind-VObj 'bool 
+                               ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                               (VBool    (= (VNum-n (VObj-value l-obj)) 
+                                            (VNum-n (VObj-value r-obj)))) )) ]
+             [else
+              (VResult (make-bind-VObj 'bool 
+                                       ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                                       (VBool   #f )))])] 
+          
+          
+          [(symbol=? 'lt op)
+           (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  (VBool (< (VNum-n (VObj-value l-obj)) (VNum-n (VObj-value r-obj)))) )) ]
+          [(symbol=? 'gt op)
+           (VResult (make-bind-VObj 'bool   ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool (> (VNum-n (VObj-value l-obj)) (VNum-n (VObj-value r-obj)))) )) ]
+          [(symbol=? 'lte op)
+           (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  (VBool (<= (VNum-n (VObj-value l-obj)) (VNum-n (VObj-value r-obj)))) )) ]
+          [(symbol=? 'gte op)
+           (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  (VBool (>= (VNum-n (VObj-value l-obj)) (VNum-n (VObj-value r-obj)))) )) ]
+          [else (error 'interp  "not taken care of 1")])]
+       
+       [(VBool? (VObj-value l-obj))
+        (cond 
+          [(symbol=? 'noteq op)
+           (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv))))  (VBool (not (equal? (VBool-b (VObj-value l-obj)) (VBool-b (VObj-value r-obj))))) )) ]
+          [(symbol=? 'eq op)
+           (begin
+             ; (display "Got here1\n")
+             ;(display "Got here1")
+             (VResult (make-bind-VObj 'bool 
+                                      (VObj-id (VResult-v (lookup 'bool (unbox menv))))  
+                                      (VBool  (equal? (VBool-b (VObj-value l-obj)) 
+                                                      (VBool-b (VObj-value r-obj)))) ))
+             )
+           ]
+          [else (error 'interp  "not taken care of 22")])]
+       
+       
+       [(VStr? (VObj-value l-obj))
+        (cond 
+          [(symbol=? 'noteq op)
+           (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool (not (equal? (list->string (VStr-s (VObj-value l-obj)))
+                                                        (list->string (VStr-s (VObj-value r-obj))))))))]
+          [(symbol=? 'eq op)
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (equal? (list->string (VStr-s (VObj-value l-obj))) 
+                                                    (list->string (VStr-s (VObj-value r-obj)))))))]
+          [(symbol=? 'lt op) 
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (string<? (list->string (VStr-s (VObj-value l-obj))) 
+                                                      (list->string (VStr-s (VObj-value r-obj)))))))]
+          
+          [(symbol=? 'lte op) 
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (string<=? (list->string (VStr-s (VObj-value l-obj))) 
+                                                       (list->string (VStr-s (VObj-value r-obj)))))))]
+          
+          
+          [(symbol=? 'gt op) 
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (string>? (list->string (VStr-s (VObj-value l-obj))) 
+                                                      (list->string (VStr-s (VObj-value r-obj)))))))]
+          
+          [(symbol=? 'gte op) 
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (string>=? (list->string (VStr-s (VObj-value l-obj))) 
+                                                       (list->string (VStr-s (VObj-value r-obj)))))))]
+          
+          
+          
+          [else (error 'interp  "not taken care of 22")])]
+       
+       
+       
+       
+       [(VNone? (VObj-value l-obj))
+        (cond 
+          [(symbol=? 'eq op)
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool  (VNone? (VObj-value  r-obj)))))] 
+          
+          [(symbol=? 'noteq op)
+           (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) 
+                                    (VBool (not  (VNone? (VObj-value  r-obj))))))]
+          [else (error 'interp  "not taken care of 22")])]
+       
+       
+       [(VList? (VObj-value l-obj))
+        (compare-VList op l-obj r-obj)]
+       
+       
+       [(VDict? (VObj-value l-obj))
+        (compare-VDict op l-obj r-obj)]
+       
+       
+       [else
+        (begin (display (VObj-value l-obj))
+               (begin (display (VObj-value r-obj))
+                      (error 'interp  "not taken care of 333")))] 
+       
+       )]))
+
+
+
+
+(define  (compare-VList [op : symbol] [l-obj : VObjType]  [r-obj : VObjType]) : VAnswer
+  (cond
+    [(symbol=? op 'eq);TODO: we can chekc type here !
+     (local ([define ll (VList-l (VObj-value l-obj))]  
+             [define rl (VList-l (VObj-value r-obj))])
+       (compare-VList-aux op  ll  rl))]
+    
+    [(symbol=? op 'noteq);TODO: we can chekc type here !
+     (VResult
+      (make-bind-VObj 
+       'bool not_in_store 
+       (VBool
+        (not (VBool-b (VObj-value 
+                       (VResult-v 
+                        ( compare-VList 'eq l-obj r-obj))))))))]  
+    
+    [else
+     (error 'compare "huh?")]))
+
+
+(define  (compare-VList-aux [op : symbol] [ll : ListVal]  [rl : ListVal]) : VAnswer
+  (cond 
+    [(and (mt? ll) (mt? rl)) (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #t)))]
+    [(and (mt? ll) (not (mt? rl))) (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))]
+    [(and (mt? rl) (not (mt? ll))) (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))]
+    [(equal? #f
+             (VBool-b (VObj-value (VResult-v 
+                                   (interp-CCompare-aux op (node-value ll)  (node-value rl))))))
+     (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))]
+    [else
+     (compare-VList-aux op (node-next ll)  (node-next rl))]))
+
+
+
+
+;TODO
+(define  (compare-VDict [op : symbol] [l-obj : VObjType]  [r-obj : VObjType]) : VAnswer
+  (cond
+    [(equal? op 'eq)
+     (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv))))
+                              (VBool (equal?
+                                      (pretty-obj 
+                                       (VObj 0 (VObj-type l-obj)
+                                             (VObj-class_loc l-obj)
+                                             (VObj-value l-obj)))
+                                      
+                                      (pretty-obj 
+                                       (VObj 0 (VObj-type r-obj)
+                                             (VObj-class_loc r-obj)
+                                             (VObj-value r-obj)))))))]
+    [else
+     (error 'interp "not done")]
+    ))
+
+
+
+
+
+(define (interp-CUnaryOp [op : symbol] [operand : CExp]) : VAnswer
+  (local ([define operand-answer (interp operand)])
+    (type-case VAnswer operand-answer
+      [VReturn (v) (error 'interp  "Syntax Error20")]
+      [VError (v)  operand-answer]
+      [VResult (operand-obj) 
+               (cond 
+                 [(symbol=? op 'not)
+                  (VResult (make-bind-VObj 'bool  ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool (not (isTrue operand-obj))) ))]
+                 [(symbol=? op 'usub)
+                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv))))  (VNum (* -1 (VNum-n (VObj-value operand-obj)))) ))]
+                 [(symbol=? op 'invert)
+                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv)))) 
+                                           (VNum (- (* -1 (VNum-n (VObj-value operand-obj))) 1)) ))]
+                 
+                 
+                 ;   [(symbol=? op 'uadd)
+                 
+                 ;   (lookup '__pos__ 
+                 ;(VClosure-member  (VObj-value  (look-up (VObj-type operand-obj) (unbox menv)))))
+                 
+                 ;    ]
+                 [else (error 'interp  "not taken care of 4")]  )])))
+
+
+(define (interp-CBoolOp (op : symbol) (l : CExp) (r : CExp) ) : VAnswer
+  (local ([define l-answer (interp l)]
+          [define r-answer (interp r)])
+    (type-case VAnswer l-answer
+      [VReturn (v) (error 'interp  "Syntax Error21")]
+      [VError (v)  l-answer]
+      [VResult (l-obj) 
+               (type-case VAnswer r-answer
+                 [VReturn (v) (error 'interp  "Syntax Error22")]
+                 [VError (v)  r-answer]
+                 [VResult (r-obj) 
+                          (cond 
+                            [(symbol=? op 'or) 
+                             (cond
+                               [(isTrue l-obj)  l-answer]
+                               [else  r-answer])]
+                            [(symbol=? op 'and) 
+                             (cond
+                               [(isTrue (VResult-v l-answer))  r-answer]
+                               [else  l-answer])]
+                            [else (error 'interp  "not taken care of 2")]
+                            )])])))
+
+
+(define (interp-CBinOp (op : symbol) (l : CExp) (r : CExp)) : VAnswer
+  (local ([define l-answer (interp l)]
+          [define r-answer (interp r)])
+    (type-case VAnswer l-answer
+      [VReturn (v) (error 'interp  "Syntax Error23")]
+      [VError (v)  l-answer]
+      [VResult (v) 
+               (type-case VAnswer r-answer
+                 [VReturn (v) (error 'interp  "Syntax Error24")]
+                 [VError (v)  r-answer]
+                 [VResult (v) 
+                          (cond 
+                            [(and
+                              (or
+                               (VNum? (VObj-value (VResult-v l-answer)))
+                               (VBool? (VObj-value (VResult-v l-answer))))
+                              
+                              (or
+                               (VNum? (VObj-value (VResult-v r-answer)))
+                               (VBool? (VObj-value (VResult-v r-answer)))))
+                             (begin
+                               (set! l-answer (interp (CPrim1 'cast-int l)))
+                               
+                               (set! r-answer (interp  (CPrim1 'cast-int r)))
+                               
+                               (cond 
+                                 [(symbol=? op 'add);TODO type checks and more 
+                                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv))))   (VNum (+ (VNum-n (VObj-value (VResult-v l-answer))) (VNum-n (VObj-value (VResult-v r-answer))))) ))]
+                                 [(symbol=? op 'sub);TODO type checks and more 
+                                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv))))   (VNum (- (VNum-n (VObj-value (VResult-v l-answer))) (VNum-n (VObj-value (VResult-v r-answer))))) ))]
+                                 [(symbol=? op 'mult);TODO type checks and more 
+                                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv))))   (VNum (* (VNum-n (VObj-value (VResult-v l-answer))) (VNum-n (VObj-value (VResult-v r-answer))))) ))]
+                                 [(symbol=? op 'div);TODO type checks and more 
+                                  (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv))))   (VNum (/ (VNum-n (VObj-value (VResult-v l-answer))) (VNum-n (VObj-value (VResult-v r-answer))))) ))]
+                                 
+                                 [else (error 'interp  "not taken care of 3")]))]
+                            
+                            [(or
+                              (VStr?   (VObj-value (VResult-v l-answer)))
+                              (VStr?   (VObj-value (VResult-v r-answer))))
+                             
+                             (cond 
+                               [(symbol=? op 'add);TODO type checks and more 
+                                (VResult 
+                                 (make-bind-VObj 
+                                  'str 
+                                  (VObj-id 
+                                   (VResult-v (lookup 'str (unbox menv))))
+                                  (VStr (string->list
+                                         (constr (list 
+                                                  (list->string  (VStr-s (VObj-value (VResult-v l-answer))))
+                                                  (list->string   (VStr-s   (VObj-value (VResult-v  (interp (CPrim1 'cast-str r))))))))))))]
+                               [(symbol=? op 'mult)
+                                (VResult 
+                                 (make-bind-VObj 
+                                  'str 
+                                  (VObj-id 
+                                   (VResult-v (lookup 'str (unbox menv))))
+                                  (VStr (string->list 
+                                         (cond
+                                           [(VStr?   (VObj-value (VResult-v l-answer)))
+                                            (string-mul 
+                                             (list->string  (VStr-s (VObj-value (VResult-v l-answer))))
+                                             (VNum-n  (VObj-value (VResult-v r-answer))))]
+                                           [else
+                                            (string-mul 
+                                             (list->string  (VStr-s (VObj-value (VResult-v r-answer))))
+                                             (VNum-n  (VObj-value (VResult-v l-answer))))])
+                                         
+                                         ))))]       
+                               [else (error 'interp  "not taken care of 3")] )]
+                            [(and
+                              (VList?   (VObj-value (VResult-v l-answer)))
+                              (VNum?   (VObj-value (VResult-v r-answer))))
+                             
+                              (VResult 
+                                 (make-bind-VObj 
+                                  'list 
+                                  (VObj-id 
+                                   (VResult-v (lookup 'list (unbox menv))))
+                                  (VList  
+                                   
+                                   (list-mul     (VList-l   (VObj-value (VResult-v l-answer)))
+                                                 (VNum-n   (VObj-value (VResult-v r-answer))))
+                                   (VList-m   (VObj-value (VResult-v l-answer))))))
+                             
+                             ]
+                            
+                            [else (error 'interp  "not taken care of 32")])])])))
+
+
+
+(define (string-mul [s : string] [n : number]) : string
+  (cond
+    [(equal? 0 n) ""]
+    [else
+     (constr (list s (string-mul s (- n 1))))])) 
+
+(define (list-mul [s : ListVal] [n : number]) : ListVal
+  (cond
+    [(equal? 0 n) (mt)]
+    [(equal? 1 n) s]
+    [else
+     (list-add s (list-mul s (- n 1)))]))
+
+(define (list-add [a : ListVal] [v : ListVal]) : ListVal
+  (cond
+    [(mt? a) v]
+    [
+     else
+     (node (node-value a) (list-add (node-next a) v))]))
+
+(define (isTrue (object : VObjType)) : boolean
+  (begin
+    ;(display "isTrue")
+    ; (print object)
+    (cond
+      [(symbol=? 'str (VObj-type object))
+       (cond 
+         [(empty? (VStr-s (VObj-value object))) #f]
+         [else  #t])]
+      [(symbol=? 'bool (VObj-type object))
+       (VBool-b (VObj-value object))]
+      [(symbol=? 'int (VObj-type object))
+       (cond 
+         [(= 0 (VNum-n (VObj-value object))) #f]
+         [else #t])]
+      [(symbol=? 'NoneType (VObj-type object))  #f]
+      
+      [(symbol=? 'dict (VObj-type object)) 
+       (if 
+        (empty? (hash-keys (VDict-d (VObj-value object))))
+        #f
+        #t)]
+      
+      [else #t])))
+
+
+
+#|
+(define (bind-args [args : (listof symbol)] [vals : (listof VObjType)] [env : Env]) : Env
+  (cond [(and (empty? args) (empty? vals)) env]
+        [(or (empty? args) (empty? vals))
+         (begin
+           (display (length args))
+           (display (length vals))
+           (map display (map symbol->string args))
+           (error 'interp "Arity mismatch1"))]
+        
+        
+        [(and (cons? args) (cons? vals))
+         (local
+           ([define loc (next-loc)])
+           (begin
+             (hash-set! store loc (first vals)) 
+             (hash-set (bind-args (rest args) (rest vals) env)
+                       (first args) loc)))]
+        [else (error 'interp  "not taken care of 5")]
+        ))
+|#
+
+(define-type EnvOrError
+  [isEnv (e : Env)]
+  [isErr (e : VAnswer)])
+
+
+(define (bind-args [args : (listof symbol)] [vals : (listof VObjType)] [env : Env]) : EnvOrError
+  (begin 
+    ;  (display "args binds \n")
+    ; (display args)
+    
+    ; (display vals)
+    ; (display "\n")
+    (cond
+      ;takes no arguments
+      [(empty?  args)
+       (cond
+         [(empty? vals) (isEnv env)];no aruguments
+         [else 
+          (begin
+            
+            (display "!!")
+            (display args)
+            (display vals)
+            (display "\n")
+            
+            (error 'interp "Arity mismatch: extra values , 0 args"))])]
+      ;takes arguments
+      [else
+       (local ([define arg (first args)])
+         (cond 
+           [(equal? arg '--tuple-star--) ; the rest are tuples
+            (local
+              ([define loc (next-loc)])
+              (begin
+                (hash-set! store loc (make-tuple vals)) 
+                (isEnv (hash-set  env
+                                  (first (rest args)) loc))))]
+           
+           [(equal? arg '--default-none--) ; followed argue has a defualt value
+            (cond
+              [(empty? vals)
+               (type-case EnvOrError  (bind-args  (rest (rest args))  vals  env)
+                 [isEnv(ise)
+                       (isEnv  (hash-set ise  (first (rest args)) (look-and-up 'None)))]
+                 [isErr(ise)
+                       (isErr  ise)])]
+              [else 
+               (local
+                 ([define loc (next-loc)])
+                 (begin
+                   (if
+                    (isSimpleType (VObj-type (first vals)))
+                    (hash-set! store loc (first vals)) 
+                    (set!  loc (VObj-id (first vals))))
+                   #|
+                   (hash-set (bind-args (rest args) (rest vals) env)
+                             (first args) loc)
+                   |#
+                   (type-case EnvOrError  (bind-args  (rest (rest args)) (rest vals) env)
+                     [isEnv(ise)
+                           (isEnv  (hash-set ise (first (rest args)) loc))]
+                     [isErr(ise)
+                           (isErr  ise)])
+                   
+                   ))])]
+           
+           [else 
+            (cond
+              [(empty? vals)
+               ; (error 'interp "Arity mismatch: insufficient values")]
+               (isErr
+                (VError
+                 (make-bind-VObj 'TypeError not_in_store (VStr (string->list "Arity mismatch: insufficient values")))))]
+              
+              [else 
+               (local
+                 ([define loc (next-loc)])
+                 (begin
+                   (if
+                    (isSimpleType (VObj-type (first vals)))
+                    (hash-set! store loc (first vals)) 
+                    (set!  loc (VObj-id (first vals))))
+                   #|
+                   (hash-set (bind-args (rest args) (rest vals) env)
+                             (first args) loc)
+                   |#
+                   (type-case EnvOrError  (bind-args (rest args) (rest vals) env)
+                     [isEnv(ise)
+                           (isEnv  (hash-set ise (first args) loc))]
+                     [isErr(ise)
+                           (isErr  ise)])
+                   
+                   ))])]))])))
+
+
+
+(define (make-tuple [vars : (listof  VObjType)]) : VObjType
+  (make-bind-VObj 'list not_in_store 
+                  (VList (make-ListVal vars) #f)))
+
+(define (make-ListVal [vars : (listof  VObjType)]) : ListVal
+  (cond
+    [(empty? vars) (mt)]
+    [else
+     (node (first vars) (make-ListVal (rest vars)))]))
+
+;mutable stack env
+(define menv (box (list (hash (list))))) 
+
+(define store (make-hash (list)))
+
+
+
+(define (push-frame (new-env : Env) ) : void
+  (set-box! menv (cons new-env (unbox menv))))
+
+(define (pop-frame) : void
+  (set-box! menv (rest (unbox menv))))
+
+(define (update-frame (new-env : Env)) : void
+  (set-box! menv (cons new-env (rest (unbox menv)))))
+
+;(define (print-store-element [l : Location] [v : VObjType]) : void
+;                            (display "hello"))
+
+
+(define (print-store) : void
+  ; (hash-for-each store print-store-element))
+  (display store))
+
+
+(define (print-envs [envs  : (listof Env)]) : (listof void)
+  (map print-env envs))
+
+
+(define (print-env [env : Env]) : void
+  (begin (display "\n")
+         (display env)))
+
+
+(define (python-prim1 [op : symbol] [arg : VObjType]) : VAnswer
+  (case op
+    [(print) (begin (print arg) (VResult arg) )]
+    [(tagof) (VResult (make-bind-VObj 'string 
+                                      ( VObj-id (VResult-v (lookup 'str (unbox menv)))) (VStr (string->list (symbol->string (VObj-type arg))))))]
+    [(cast-int)
+     (cond 
+       [(symbol=?  (VObj-type arg) 'int) (VResult arg)]
+       [(symbol=?  (VObj-type arg) 'bool) 
+        (cond
+          [(VBool-b (VObj-value arg)) (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv)))) (VNum 1)))]
+          [else (VResult (make-bind-VObj 'int ( VObj-id (VResult-v (lookup 'int (unbox menv)))) (VNum 0)))])]
+       [else (error 'casting-int "not valid")])]
+    
+    [(cast-bool)
+     (begin 
+       ;   (display "h")
+       ;   (print arg)
+       
+       (cond 
+         [(symbol=?  (VObj-type arg) 'bool) 
+          (begin 
+            (VResult arg)
+            )]
+         [(symbol=?  (VObj-type arg) 'int) 
+          (cond
+            [(equal? (VNum-n (VObj-value arg)) 0) (VResult (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))]
+            [else (VResult   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #t)))])]
+         
+         [(symbol=?  (VObj-type arg) 'str) 
+          (if  (empty?  (VStr-s (VObj-value arg)))
+               (VResult   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))
+               
+               (VResult   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #t)))
+               
+               )]
+         [(symbol=?  (VObj-type arg) 'dict) 
+          
+          (if  (empty?  (hash-keys (VDict-d (VObj-value arg))))
+               (VResult   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #f)))
+               
+               (VResult   (make-bind-VObj 'bool ( VObj-id (VResult-v (lookup 'bool (unbox menv)))) (VBool #t)))
+               
+               )
+          ]
+         
+         
+         [else (error 'casting-bool "not valid")])
+       )
+     ]
+    [(cast-str)
+     (begin 
+       ;   (display "h")
+       ;   (print arg)
+       
+       (cond 
+         [(symbol=?  (VObj-type arg) 'str) 
+          (begin 
+            (VResult arg)
+            )]
+         [(symbol=?  (VObj-type arg) 'int) 
+          (VResult   (make-bind-VObj 'str 
+                                     ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                     (VStr 
+                                      (string->list (number->string  (VNum-n (VObj-value arg)))))))]
+         
+         [(symbol=?  (VObj-type arg) 'bool) 
+          (VResult   (make-bind-VObj 'str 
+                                     ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                     
+                                     (VStr
+                                      (string->list (if(VBool-b (VObj-value arg))
+                                                       "True"
+                                                       "False"
+                                                       )  ) )))]
+         [(symbol=?  (VObj-type arg) 'RuntimeError) 
+          (VResult   (make-bind-VObj 'str 
+                                     not_in_store
+                                     (begin
+                                       ; (display arg)
+                                       
+                                       ; (display "\n")
+                                       (VObj-value arg))))]
+         
+         
+         
+         [else (error 'casting-str "not valid")])
+       )
+     ]
+    [(minimum)
+     (find-min arg)
+     ]
+    [(maximum)
+     (find-max arg)
+     ]
+    [else
+     (error 'prim1 "huh?")]))
+
+
+(define (find-min [o : VObjType]) : VAnswer
+  (cond
+    [(VStr? (VObj-value o))
+     (VResult   (make-bind-VObj 'str 
+                                ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                (VStr (string->list  (find-min-string (list->string (VStr-s (VObj-value o))) "z")))))]
+    [else
+     (mkerr "asdas")]))
+
+(define (find-max [o : VObjType]) : VAnswer
+  (cond
+    [(VStr? (VObj-value o))
+     (VResult   (make-bind-VObj 'str 
+                                ( VObj-id (VResult-v (lookup 'str (unbox menv)))) 
+                                (VStr (string->list  (find-max-string (list->string (VStr-s (VObj-value o))) "a")))))]
+    [else
+     (mkerr "asdas")])) 
+
+(define (find-min-string  [s : string] [start : string]) : string
+  (cond
+    [(equal? s "") start]
+    [else
+     (if
+      (string<=? (list->string (list (first (string->list s)))) start)
+      (find-min-string  (list->string  (rest (string->list s))) (list->string (list (first (string->list s)))))
+      
+      (find-min-string  (list->string   (rest (string->list s))) start))]))
+
+(define (find-max-string  [s : string] [start : string]) : string
+  (cond
+    [(equal? s "") start]
+    [else
+     (if 
+      (string>=? (list->string (list (first (string->list s)))) start)
+      
+      (find-max-string  (list->string  (rest (string->list s))) (list->string (list (first (string->list s)))))
+      (find-max-string  (list->string   (rest (string->list s))) start))
+     
+     ]))
+
+
+
+
+(define (make-bind-VObj [class_tag : symbol]
+                        [class_loc : Location]
+                        [thing : CVal]) : VObjType
+  (if (isSimpleType class_tag)
+      (VObj not_in_store class_tag class_loc thing)
+      (local ([define loc (next-loc)]
+              [define obj (VObj loc class_tag class_loc thing)])
+        (begin
+          (hash-set! store loc obj)
+          obj))))
+
+
+(define (mkerr [a : string]) 
+  (error 'check_a_error a)) 
+
+; this makes a string from the CVal
+(define (make-string-based-on-value [v : CVal]) : string
+  (type-case CVal v
+    [VNum (n)  (number->string n) ]
+    [VStr (s) (list->string s)]
+    [VBool (b) (if b "True" "False")  ]
+    ;[VClosure (env : Env) (args : (listof symbol)) (body : CExp) (members : Env)]
+    [VNone()  "None"]
+    [VDict (d) (make-string-based-on-Dict d)]
+    ;[VMembers (class_tag : symbol) (m : Env)]
+    [VList (v m)
+           (make-string-based-on-ListVal v )]
+    [else
+     (begin (display v)
+            (error 'makestring "\nnot done"))]))
+
+
+
+(define (make-string-based-on-ListVal   [v : ListVal] )   : string
+  (cond
+    [(mt? v) ""]
+    [else
+     (string-append (make-string-based-on-value (VObj-value (node-value v)))
+                    
+                    (make-string-based-on-ListVal (node-next v)))]))
+
+
+
+
+(define (make-string-based-on-Dict   [d : (hashof VObjType VObjType)] )   : string
+  (local ([define keys (hash-keys d)])
+    (cond
+      [(empty? keys) ""]
+      [else
+       (constr
+        (list  (make-string-based-on-value 
+                (VObj-value  (first keys)))
+               
+               ; (make-string-based-on-value 
+               ; (VObj-value  (some-v (hash-ref d  (first keys)))))
+               (make-string-based-on-Dict
+                (hash-remove d  (first keys)))))])))
+
+
+
+;remove everything before the char
+(define (trimString [c : char] [b : (listof char) ]) : (listof char) 
+  (cond
+    [(empty? b) (list)]
+    [(equal? (first b) c) b]
+    [else
+     (trimString c (rest b))]))
+
+
+(define (get-firsts [n : number] [b : (listof char) ]) :   (listof char) 
+  (cond
+    [(equal? n 0) (list)]
+    [else
+     (cons 
+      (first b)
+      (get-firsts  (- n 1) (rest b)))]))
+
+
+
+(define (isPrefix [a : (listof char) ] [b : (listof char) ]) : boolean
+  (cond
+    [(< (length b) (length a)) #f]
+    
+    [(equal? (list->string a)
+             (list->string (get-firsts (length a) b)))
+     #t]
+    [else
+     #f]))
+
+
+(define (isSubString [a : (listof char) ] [b : (listof char) ]) : boolean
+  (local ([define trimed-b (trimString (first a) b)])
+    (cond
+      [(> (length a) (length trimed-b)) #f]
+      [(isPrefix a trimed-b) #t]
+      [else
+       (isSubString a (rest b))]
+      
+      )))

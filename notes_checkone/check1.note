@@ -1,0 +1,61 @@
+[Check One Note]
+
+
+Everything is an object.
+
+The environment is being implemented as a global stack of environments (hash tables).
+	When a function is applied, its environment is pushed onto the stack, then is it popped after the application completes.
+	Same is true of CLet.
+
+The store is a global mutable hash table.
+	This prevents having to use store passing style (Mostly make the code look cleaner.)
+
+
+built in values:
+	Bound to the desugared program by wrapping it with CLets.
+
+VBool instead of VTrue/ VFalse
+
+CPass : treated as No-op return CNone
+
+Treat Classes as lamdbas that create/init new objects.
+	These objects would have a reference to the class Object.
+	Normal objects will just have a hashmap inside of them for member access
+
+CSeq : special case taken care of for CReturn : do not continues to interp the second part of a Seq if the first
+	part evaluated to be VReturn.
+
+CEmpty / CFirst / CRest  for arrays and string operations.
+	future operations such as index operation will be performed using those.
+
+CSet! update current environment. 
+
+Change String from (listof string) to (listof char)
+
+Add another type to VObjectType for raised exceptions to handle popping up exceptions
+
+Hoist declared variables in functions (while setting the value to an error state) to mask global variables inside functions
+
+
+Might want to treat loops as something other than functions to prevent returns in a loop.
+	Or add info to return saying which function is belongs to?
+	Must figure out a way to desugar break and continue if loops are functions
+
+Make a function wrapping interp to handle the cases if a Return or Raise pop up completely
+
+Not sure what to do about floats since json doesnt seem to distinguish between float and int. For now they are one datatype
+
+Global variable can be reached by checking the environments under the top of the stack
+
+A generational GC can be added to the interpreter by dividing the store into multiple stores and starting the GC process
+	where one of the levels of the store if filled do to a set!.
+	The GC would remove the last reference to an Object in the global store then would rely on rackets GC to 
+	reclaim the memory (unless we can directly access memory from within racket).
+
+Generators?
+
+Iterators?
+
+Import?
+
+del? Should just remove the variable reference from the current enviroment?

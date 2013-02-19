@@ -1,0 +1,135 @@
+#lang plai-typed
+(define next-loc
+  (let ([n (box 0)])
+    (lambda ()
+      (begin
+        (set-box! n (add1 (unbox n)))
+        (unbox n)))))
+#|
+
+This is the core language; it is just borrowing a few things from 
+ParselTongue.
+
+|#
+
+;things not in store
+(define not_in_store 
+;  (lambda() (* -1 (next-loc)) ))
+  -1)
+
+
+(define-type CExp
+  [CNum     (n : number)]
+  [CStr     (s : (listof char))]
+  [CBool    (b : boolean)]
+  [CSeq     (e1 : CExp) (e2 : CExp)]
+  [CError   (class_tag : symbol) (e : CExp)]
+  [CIf      (test : CExp) (then : CExp) (else : CExp)]
+  [CId      (x : symbol)]
+  ;[CRef     (x : symbol)]
+  [CLet     (x : symbol) (bind : CExp) (body : CExp)]
+  [CApp     (fun : CExp) (args : (listof CExp))]
+  [CLambda  (args : (listof symbol)) (body : CExp)]
+  [CPrim1   (prim : symbol) (arg : CExp)]
+  [CRaise   (e : CExp)]
+  [CPass]
+  [CBoolOp  (op : symbol) (l : CExp) (r : CExp)]
+  [CUnaryOp (op : symbol) (operand : CExp)]
+  [CBinOp   (op : symbol) (l : CExp) (r : CExp)]
+  [CEmpty?  (l : CExp)]
+  [CFirst   (l : CExp)]
+  [CRest    (l : CExp)]
+  [CCompare (op : symbol) (l : CExp) (r : CExp)]
+  [CNone]
+  [CDict(keys : (listof CExp)) (values : (listof CExp))]
+  [CDictGet (d : CExp) (k : CExp) (df : CExp )]
+   
+  [CSet!(lhs : CExp) (v : CExp)]
+  [CCopy!(lhs : symbol) (v : CExp)] 
+  [CReturn (v : CExp)]
+  [CClass (n : symbol) (b : CExp) (vs : (listof symbol))]
+  ; A COBJ that will be interped into vmembers
+  [CInstance(class_tag : symbol) (loc  : Location)]
+  [CGetField (o : CExp) (s : symbol)]
+  [CStrId(pointer : CExp) ]
+  ;try (excepthandler else); we will add else anyway
+  [CTryEx (t : CExp) (eh : CExp) (orelse : CExp)]
+  ;CFinally because we should not add finally if there is not finally
+  [CFinally (te : CExp) (f : CExp)]
+  [CList (m : boolean)]
+  [CCons (v : CExp) (r : CExp)] 
+  [CUndefined]
+  [CIsInstance (i : CExp) (c : CExp)]
+
+  ; this may be reduced to a function only
+  [CSubscript(object : CExp) (index : CExp) ]
+  
+  ; get the id
+  [CGetObjId (o : CExp)]
+  
+  ; get the class id
+  [CGetClassId (o : CExp)]
+  [CDelete (t : CExp)]
+  
+  )
+
+;(define-type CObjType
+; [CObj (id : string) (type : symbol) (value : CExp)])
+
+
+
+
+(define-type CVal
+  [VNum (n : number)]
+  [VStr (s : (listof char))]
+  [VBool (b : boolean)]
+  [VClosure (env : Env) (args : (listof symbol)) (body : CExp) (members : Env)]
+  [VNone]
+  [VDict (d : (hashof VObjType VObjType))]
+  [VMembers (class_tag : symbol) (m : Env)]
+  [VList (l : ListVal) (m : boolean)]
+  ;[VRef (loc : Location)]
+  )
+
+(define-type ListVal
+  [mt]
+  [node (value : VObjType) (next : ListVal)])
+  
+
+
+
+(define-type VObjType
+  [VObj  (id : Location) 
+         (type : symbol)  ; Replace with class name?
+         (class_loc : Location)
+         (value : CVal)]
+  )
+
+
+(define-type VAnswer
+  [VResult (v : VObjType) ]
+  [VReturn (v : VObjType)]
+  [VError (v : VObjType)])
+
+;have type systems to enforce more safety 
+; eliminate potential errors
+; return/excpetion/control flow  /return /raise
+; class storage/try to push things classy? through
+; overloading operators
+; how to handle ovloading
+; __add__..give a thought
+#|
+
+(define-type CObj
+  [CAnonObj (id : string) (type : symbol) (value : CVal)])
+|#
+(define-type-alias Location number)
+
+(define-type-alias Env (hashof symbol Location))
+
+(define-type-alias Stack (boxof (listof Env)))
+
+(define-type-alias Store (boxof (hashof Location VObjType)))
+
+
+

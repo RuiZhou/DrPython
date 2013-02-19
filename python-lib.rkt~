@@ -1,0 +1,309 @@
+#lang plai-typed
+
+(require "python-core-syntax.rkt")
+(require "python-helper.rkt")
+#|
+
+Here is a suggestion for how to implement shared runtime functionality -
+write it as core expression forms and use python-lib to wrap your
+desugared expressions in an environment that will contain useful
+bindings.  For example, this sample library binds `print` to a function
+that calls the primitive `print`.
+
+|#
+
+
+(define (CSeqs  [binds  : (listof ClassFunc)]) : CExp
+  (CSeqs-with-base (rest binds)
+                   (CSet!(CId (cf-n  (first binds)))  (cf-e (first binds))))) 
+
+(define (CSeqs-with-base  [binds  : (listof ClassFunc)] [base : CExp] ) : CExp
+  (cond 
+    [(equal? (length binds) 0) base]
+    [else
+     (CSeqs-with-base (rest binds)
+                      (CSeq (CSet! (CId (cf-n (first binds))) (cf-e (first  binds))) base))]))
+
+
+
+(define-type ClassFunc
+  (cf (n : symbol) (e : CExp)))
+(define-type-alias Lib (CExp -> CExp))
+
+
+
+(define callable-func
+  (CLambda (list 'x)
+           (CCompare 'eq (CPrim1 'tagof  (CId 'x)) (CStr (string->list "func")))))
+
+(define print-lambda
+  (CLambda (list 'to-print)
+           (CPrim1 'print (CId 'to-print))))
+
+(define assert-true-lambda
+  (CLambda (list 'check-true)
+           (CIf (CId 'check-true) (CBool #t) (CError 'Exception (CStr (string->list "Assert failed"))))))
+
+(define assert-false-lambda
+  (CLambda (list 'check-false)
+           (CIf (CId 'check-false)  (CError 'Exception (CStr (string->list "Assert failed"))) (CBool #t))))
+
+
+
+
+
+(define assert-equal-lambda
+  (CLambda (list 'left 'right)
+           (CIf 
+            (CCompare 'eq (CId 'left) (CId 'right))
+            (CNone)
+            (CRaise (CError 'Exception (CStr (string->list "Assertion Error")))))))
+
+
+(define assert-is-lambda
+  (CLambda (list 'left 'right)
+           (CIf 
+            ;(CCompare 'eq (CId 'left) (CId 'right))
+            (CCompare 'is (CId 'left) (CId 'right))
+            
+            (CNone)
+            (CRaise (CError 'Exception (CStr (string->list "Assertion Error")))))))
+
+
+(define assert-in-lambda
+  (CLambda (list 'left 'right)
+           (CIf 
+            
+            (CCompare 'in (CId 'left) (CId 'right))
+            
+            (CNone)
+            (CRaise (CError 'Exception (CStr (string->list "Assertion Error")))))))
+
+
+(define assert-notin-lambda
+  (CLambda (list 'left 'right)
+           (CIf 
+            
+            (CCompare 'notin (CId 'left) (CId 'right))
+            
+            (CNone)
+            (CRaise (CError 'Exception (CStr (string->list "Assertion Error")))))))
+
+
+
+(define assert-isNot-lambda
+  (CLambda (list 'left 'right)
+           (CIf 
+            ; (CCompare 'noteq (CId 'left) (CId 'right))
+            (CCompare 'isnot (CId 'left) (CId 'right))
+            
+            (CNone)
+            (CRaise (CError 'Exception (CStr (string->list "Assertion Error")))))))
+
+
+
+(define assert-raise-lambda
+  (CLambda (list 'except 'expr  '--tuple-star-- '--tupled-value--)
+           (CTryEx 
+            (CApp (CId 'expr) (list (CId '--tupled-value--))) 
+            (CIf 
+             (CCompare 'eq
+                       ; (CStr (symbol->string ....?????need suppoort arirty mistamtch in constructor
+                       (CPrim1 'tagof  
+                               (CApp (CId 'except) (list (CStr (string->list "Raise assertion"))))) 
+                       (CPrim1 'tagof  (CId 'try-exception)))
+             (CNone)
+             ;(CRaise (CError 'Exception (CStr (string->list "Assertion Error"))))
+             (CRaise (CError 'Exception  (CPrim1 'tagof  (CId 'try-exception)))))
+            (CError 'internal (CStr (string->list "really should not come here"))))))
+
+
+(define true-val
+  (CBool #t))
+
+(define false-val
+  (CBool #f))
+
+(define none-val
+  (CNone))
+
+
+;exceptions
+(define constructException
+  (CLambda (list 'err-msg) 
+           (CError 'Exception (CId 'err-msg))))
+
+(define constructRuntimeError
+  (CLambda (list 'err-msg) 
+           (CError 'RuntimeError (CId 'err-msg))))
+
+
+
+
+(define constructTypeError
+  (CLambda (list 'err-msg) 
+           (CError 'TypeError (CId 'err-msg))))
+
+
+(define constructIndexError
+  (CLambda (list ) 
+           (CError 'IndexError (CStr (string->list "IndexError")))))
+
+
+(define constructKeyError
+  (CLambda (list 'err-msg) 
+           (CError 'KeyError (CId 'err-msg))))
+
+
+(define len-func
+  (CLet 'dummy-func (CLambda (list) (CRaise (CError 'Exception (CStr (string->list "Shouldn't get here.")))))
+        (CLambda (list 'lst)
+                 (CIf (CEmpty? (CId 'lst))
+                      (CNum 0)
+                      (CBinOp 'add (CNum 1) (CApp (CId 'len) (list (CRest (CId 'lst)))))))))
+
+
+(define min-func
+  (CLet 'dummy-func (CLambda (list) (CRaise (CError 'Exception (CStr (string->list "Shouldn't get here.")))))
+        (CLambda (list 'lst)
+                 
+                 (CPrim1 'minimum (CId 'lst)))))
+
+
+(define max-func
+  (CLet 'dummy-func (CLambda (list) (CRaise (CError 'Exception (CStr (string->list "Shouldn't get here.")))))
+        (CLambda (list 'lst)
+                 
+                 (CPrim1 'maximum (CId 'lst)))))
+
+
+
+(define abs-func
+  (CLet 'dummy-func (CLambda (list) (CRaise (CError 'Exception (CStr (string->list "Shouldn't get here.")))))
+        (CLambda (list 'x)
+                 (CIf (CCompare 'lt (CPrim1 'cast-int (CId 'x)) (CNum 0)) 
+                      (CUnaryOp 'usub (CPrim1 'cast-int (CId 'x)))
+                      (CPrim1 'cast-int (CId 'x))
+                      ))))
+
+
+
+
+(define isinstance-func
+  (CLambda (list 'i 'c)
+           (CIsInstance (CId 'i) (CId 'c))))
+
+
+(define int_class
+  (CClass 'int 
+          
+          (CSeqs (list 
+                  (cf '__init__ (CLambda (list 'x)  (CPrim1 'cast-int (CId 'x))))
+                  (cf '__pos__ (CLambda (list 'x)  (CPrim1 'cast-int (CId 'x))))
+                  (cf '__neg__ (CLambda (list 'x)  (CUnaryOp 'usub (CPrim1 'cast-int (CId 'x)))))
+                  (cf '__invert__ (CLambda (list 'x)  (CUnaryOp 'invert (CPrim1 'cast-int (CId 'x)))))
+                  (cf '--not-- (CLambda (list 'x)  (CIf (CCompare 'eq (CPrim1 'cast-bool (CId 'x)) (CBool #t))  (CBool #t) (CBool #f))))))
+          (list '__init__ '__pos__ '__neg__ '__invert__ '--not--)))
+
+(define bool_class
+  (CClass 'bool 
+          (CSeqs (list
+                  (cf '__init__ (CLambda (list '--tuple-star-- 'x)  
+                                         
+                                         (CIf (CEmpty? (CId 'x) )  (CBool #f)   (CPrim1 'cast-bool (CFirst (CId 'x))))))
+                  (cf '__pos__ (CLambda (list 'x)  (CPrim1 'cast-int (CId 'x))))
+                  (cf '__neg__ (CLambda (list 'x)  (CUnaryOp 'usub (CPrim1 'cast-int (CId 'x)))))
+                  (cf '__invert__ (CLambda (list 'x)  (CUnaryOp 'invert (CPrim1 'cast-int (CId 'x)))))
+                  (cf '--not-- (CLambda (list 'x)  (CIf (CCompare 'eq (CId 'x) (CBool #t))  (CBool #f) (CBool #t))))))
+          (list '__init__ '__pos__ '__neg__ '__invert__ '--not--)))
+
+
+(define str_class
+  (CClass 'str
+          (CSeqs (list
+                  (cf '__init__ (CLambda (list 'x )   (CPrim1 'cast-str (CId 'x))))))
+          (list '__init__)))
+
+(define list_class
+  (CClass 'list
+          (CSeqs (list
+                  (cf '__init__ (CLambda (list 'x )   (CPrim1 'cast-list (CId 'x))))))
+          (list '__init__)))
+
+(define tuple_class
+  (CClass 'tuple
+          (CSeqs (list
+                  (cf '__init__ (CLambda (list 'x )   (CPrim1 'cast-tuple (CId 'x))))))
+          (list '__init__)))
+
+
+(define dict_class
+  (CClass 'dict
+          (CSeqs (list
+                  (cf '__init__ (CLambda (list 'x)   (CPass)))
+                  
+                  (cf 'clear (CLambda (list 'x ) 
+                                      ; (CSeq 
+                                      ;  (CPrim1 'print (CId 'x))
+                                      (CCopy!   'x (CDict (list )   (list)))))
+                  (cf 'get (CLambda (list 's 'k '--default-none-- 'd ) 
+                                    (CDictGet (CId 's) (CId 'k) (CId 'd))))
+                  
+                  
+                  
+                  (cf '__getitem__ (CLambda (list 's 'k '--default-none-- 'd ) 
+                                            (CDictGet (CId 's) (CId 'k) (CId 'd))))
+                  
+                  
+                  ))
+          (list '__init__ 'clear 'get '__getitem__)))
+
+
+
+
+(define-type LibBinding
+  [bind (left : symbol) (right : CExp)])
+
+(define lib-functions
+  (list (bind 'int int_class)
+        (bind 'str str_class)
+        (bind 'bool bool_class)
+        (bind 'list list_class)
+        (bind 'tuple tuple_class)
+        (bind 'dict dict_class)
+        (bind 'print print-lambda)
+        (bind 'True true-val)
+        (bind 'False false-val)
+        (bind 'None none-val)
+        (bind 'Exception constructException)
+        (bind 'IndexError constructIndexError)
+        (bind 'TypeError constructTypeError)
+        (bind 'KeyError constructKeyError)
+        (bind 'RuntimeError constructRuntimeError)
+        (bind 'len len-func)
+        (bind 'abs abs-func)
+        (bind 'min min-func)
+        (bind 'max max-func)
+        (bind 'callable  callable-func)
+        (bind '___assertTrue assert-true-lambda)
+        (bind '___assertFalse assert-false-lambda)
+        (bind '___assertEqual assert-equal-lambda)
+        (bind '___assertIs assert-is-lambda)
+        (bind '___assertIsNot assert-isNot-lambda)
+        (bind '___assertIn assert-in-lambda)
+        (bind '___assertNotIn assert-notin-lambda)
+        (bind '___assertRaises  assert-raise-lambda)
+        (bind 'isinstance  isinstance-func)
+        ))
+
+(define (python-lib expr)
+  (local [(define (python-lib/recur libs)
+            (cond [(empty? libs) expr]
+                  [(cons? libs)
+                   (type-case LibBinding (first libs)
+                     (bind (name value)
+                           (CLet name value
+                                 (python-lib/recur (rest libs)))))]))]
+    (python-lib/recur lib-functions)))
+
+

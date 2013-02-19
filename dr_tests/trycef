@@ -1,0 +1,15 @@
+try:
+	raise Exception("ex")
+#	1
+#except Exception as e:
+# 	print(3)
+except :
+	print(2)
+else:
+	print(4)
+finally:
+	print(5)
+
+#else run when not exception
+#except accept anything
+#finally run after try catch no matter what

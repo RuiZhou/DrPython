@@ -1,0 +1,26 @@
+#lang plai-typed
+
+; set subtraction 
+(define (hash-sub [d : (hashof int string)] [ to-sub :  (hashof int string)] ) : (hashof int string)
+  ( 
+   
+   hash-sub-aux d
+                
+                (hash-keys  to-sub)
+                
+                ))
+
+(define (hash-sub-aux [d : (hashof int string)] [keys : (listof  int )] ) :  (hashof int string)
+  (cond
+    [(empty? keys) d]
+    [else
+     (hash-remove (hash-sub-aux d (rest keys)) (first keys))]))
+
+;set intersection
+(define (hash-inter [d1 : (hashof int string)] [d2 : (hashof int string)] ) : (hashof int string)
+  ( 
+   ;(mkerr "adasd")  
+   (hash-sub d1 (hash-sub d1 d2) )
+   ;   
+   ))
+

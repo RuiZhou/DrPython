@@ -1,0 +1,279 @@
+#lang plai-typed
+
+(require "python-syntax.rkt"
+         "python-core-syntax.rkt")
+
+
+(define (desugar-wrap [expr : PyExpr]) : CExp
+  (bind-CLets (get-vars expr) (desugar expr)))
+
+
+(define (bind-CLets [vars : (listof symbol)] [c : CExp]) : CExp
+  (cond
+    [(empty? vars)
+     c]
+    [else
+     (CLet (first vars) (CUndefined) (bind-CLets (rest vars) c))]))
+
+
+
+(define (desugar [expr : PyExpr]) : CExp
+  (type-case PyExpr expr
+    [PySeq (es) 
+           (cond 
+             [(empty? es) (CPass)]
+             [else (foldl (lambda (e1 e2) (CSeq e2 (desugar e1))) (desugar (first es)) (rest es))])]
+    [PyNum (n) (CNum n)]
+    [PyApp (f args)
+           ;add self if the function is PyDot
+           (type-case PyExpr f
+             [PyDot (o field)
+                    (CLet 'temp-obj (desugar o)
+                          (CApp (CGetField (CId 'temp-obj) field)  (cons (CId 'temp-obj) (map desugar args))))]
+             [else
+              (CApp (desugar f) (map desugar args))])]
+    [PyId (x) (CId x)]
+    [PyStr (s) (CStr (map first (map string->list s)))]
+    [PyIf (t b e) 
+          (CIf (desugar t) (desugar b)  (desugar e))]  
+    
+    [PyRaise (e)  (CRaise (desugar e))]
+    [PyPass() (CPass)]
+    [PyBoolOp (op args)(desugar-bool-op op args)]
+    [PyBinOp (op l r) (CBinOp op (desugar l) (desugar r))]
+    [PyDelete (p) (CDelete (desugar p))]
+    ;[PyUnaryOp (op operand) 
+    ;          (cond 
+    ;           [(symbol=? op 'uadd)  (desugar operand)]
+    ;          [else (CUnaryOp op (desugar operand))])]
+    [PyUnaryOp (op operand) 
+               (cond 
+                 [(symbol=? op 'not) (CUnaryOp op (desugar operand))]
+                 [else (CLet 'temp-A (desugar operand)
+                             (CApp 
+                              (CGetField 
+                               (CStrId (CPrim1 'tagof  (CId 'temp-A ))) op)
+                              (list (CId 'temp-A))))])]
+    
+    
+    [PyCompare (left ops comparators)
+               (desugar-PyCompare left ops comparators)]
+    [PyDict (keys values) (CDict (map desugar keys)  (map desugar values))]
+    [PyLambda (ps b) (CLambda ps (desugar b))]
+    [PySet! (lhs v) (desugar-PySet! lhs (desugar v))]
+    [PyFunc (n ps es) (CSeq (CSet! (CId n) 
+                                   (CLambda ps (CRaise (CError 'Exception (CStr (string->list "Dummy Function"))))))
+                            (CSeq (CSet! (CId 'temp-func) (CLambda ps 
+                                                             (cond 
+                                                               [(empty? es) (CPass)]
+                                                               [else (foldl (lambda (e1 e2) (CSeq e2 (desugar e1))) (desugar (first es)) (rest es))])))
+                                  (CCopy! n (CId 'temp-func))))]
+    
+    ;;[PyClass (n b) (CClass n (desugar (PySeq b)) (foldl append empty (map get-vars b)))]
+    
+    [PyClass (n b) 
+             (local
+               ([define body (desugar (PySeq b))]
+                [define members (foldl append empty (map get-vars b))])
+               (CSet! (CId n) (CClass n body members)))]
+    
+    
+    ;    [PyClass (n b) 
+    ;             (local
+    ;               ([define body (desugar (PySeq b))]
+    ;                [define members (foldl append empty (map get-vars b))])
+    ;               (CSeq (CSet! n 
+    ;                           (CClass n (CRaise (CError (CStr (string->list "Dummy Function")))) empty ))
+    ;                   (CSeq (CSet! 'temp-class (CClass n body members))
+    ;                        (CSet! n (CId 'temp-class)))))]
+    
+    
+    [PyReturn (v) (CReturn (desugar v))]
+    
+    [PyDot (o f) (CGetField (desugar o) f)]
+    
+    
+    [PyExpHandler (name  class_tag body)  (error 'desugar "syntax error (exh)") ]
+    
+    [PyTryExcept (try excepts orelse)
+                 (CTryEx (desugar try)
+                         (except-handler-build excepts) (desugar orelse))]
+    
+    
+    [PyTryFinally (try final)
+                  (CFinally (desugar try) (desugar final))]
+    
+    [PyList (l)
+            (build-CList l #t)]
+    
+    [PyTuple (l)
+             (build-CList l #f)]
+   
+    [PySubscript(o i)
+                (CSubscript (desugar o) (desugar i))]
+                
+        [PyAugAssign(t op v)
+            (CSet!
+             (desugar t)
+             
+            (CBinOp op  (desugar t)   (desugar v)))]
+    ;[else (error 'desugar   "dummy"  )]
+    
+    ))
+
+(define (build-CList [l : (listof PyExpr)] [m : boolean] ) : CExp
+  (cond
+    [(empty? l) (CList m)]
+    [else 
+     (CCons (desugar (first l)) (build-CList (rest l) m))])) 
+
+
+#|
+(define (except-handler-build [ehs : (listof PyExpr)] [orelse : PyExpr]) : CExp
+  (local 
+    ([define else-case
+       (if (= 0 (length (PySeq-es orelse))) (CRaise (CId 'try-exception))
+           (desugar orelse))])
+    (except-handler-build-aux ehs else-case)))
+
+
+
+
+(define (except-handler-build-aux [ehs : (listof PyExpr)] [orelse : CExp]) : CExp
+  (cond
+    [(= 0 (length ehs))   orelse]
+    [else
+     (local
+       ([define handler (first ehs)])
+       (CIf (CCompare 'eq (CPrim1 'tagof (CId 'try-exception)) (CStr (string->list(PyExpHandler-class_tag handler))))
+            (CLet (PyExpHandler-name handler) (CId 'try-exception) (desugar (PyExpHandler-body handler)))
+            (except-handler-build-aux  (rest ehs) orelse)))]))
+
+|#                        
+
+
+(define (except-handler-build [ehs : (listof PyExpr)] ) : CExp
+  (cond
+    [(= 0 (length ehs)) (CRaise (CId 'try-exception))]
+    [else
+     (local
+       ([define handler (first ehs)])
+       (cond
+         [(equal?  '--any-- (PyExpHandler-name handler))   
+          (CLet (PyExpHandler-name handler) (CId 'try-exception) (desugar (PyExpHandler-body handler)))
+          ]
+         [else
+          (CIf (CCompare 'eq (CPrim1 'tagof (CId 'try-exception)) (CStr (string->list(PyExpHandler-class_tag handler))))
+               (CLet (PyExpHandler-name handler) (CId 'try-exception) (desugar (PyExpHandler-body handler)))
+               (except-handler-build  (rest ehs)))]))]))
+
+
+
+
+
+
+
+;;hoisting 
+(define (get-vars [e : PyExpr]) : (listof symbol)
+  (type-case PyExpr e
+    ; [PySeq     (es : (listof PyExpr))]
+    [PySeq (es)  (foldl append empty (map get-vars es))]
+    ; [PyNum     (n : number)]
+    [PyNum(n) empty]
+    ; [PyId      (x : symbol)]
+    [PyId(x) empty]
+    ; [PyApp     (fun : PyExpr) (args : (listof PyExpr))]
+    [PyApp(fun args) empty]
+    ; [PyStr     (s : (listof string))]
+    [PyStr(s) empty]
+    ; [PyIf      (t : PyExpr) (b : PyExpr) (e : PyExpr)]
+    [PyIf(t b e)  ( append (append (get-vars t) (get-vars b)) (get-vars e))]
+    ; [PyRaise   (e : PyExpr)] 
+    [PyRaise(e) empty]
+    ; [PyPass]
+    [PyPass() empty]
+    ; [PyBoolOp  (s : symbol) (ls : (listof PyExpr))]
+    [PyBoolOp (s ls) (foldl append empty (map get-vars ls))]   
+    ; [PyUnaryOp (s : symbol) (operand : PyExpr)]
+    [PyUnaryOp (s op) (get-vars op)]
+    ; [PyBinOp   (s : symbol) (l : PyExpr) (r : PyExpr)]
+    [PyBinOp (s l r) (append (get-vars l) (get-vars r))]
+    ; [PyCompare (s : PyExpr) (ops : (listof symbol)) (comparators  : (listof PyExpr))]
+    [PyCompare (s ops comparators) 
+               (foldl append empty (map get-vars comparators))]
+    ; [PyDict    (keys : (listof PyExpr)) (values : (listof PyExpr))]
+    [PyDict (k v) empty]
+    ; [PyLambda  (ps : (listof symbol)) (b : PyExpr)]
+    [PyLambda (ps b) (get-vars b)]
+    ; [PyFunc    (n : symbol) (ps : (listof symbol)) (b : (listof PyExpr))]
+    [PyFunc(n ps b) empty]
+    ; [PySet!    (lhs : (listof symbol)) (v : PyExpr)]
+    [PySet! (lhs v) (map PyId-x (filter PyId? lhs)) ]
+    ; [PyReturn  (v :  PyExpr)]
+    [PyReturn (v) empty]
+    ; [PyClass   (n : symbol) (b : (listof PyExpr))]))
+    [PyClass (n b) empty]
+    
+    [PyDot (o f) empty]
+    
+    [PyTryExcept (t exhds e)
+                 (append (foldl append (get-vars t) (map get-vars exhds)) (get-vars e))]
+    
+    [PyTryFinally (try final)
+                  (append (get-vars try) (get-vars final))]
+    
+    [PyExpHandler (name class_tag  body)
+                  (get-vars body)]
+    
+    [PyList(l) empty]
+    [PyTuple(l) empty]
+    
+    [PySubscript(o i)
+                empty]
+    
+    [PyDelete (d)
+     empty]
+                
+    [PyAugAssign(t op v)
+             (get-vars t)
+             ]
+                  
+    ;[else (error 'desugar   "need to hoist"  )]
+    ))
+
+
+
+
+
+
+(define (desugar-PySet! [lhs : (listof PyExpr)] [e : CExp]) : CExp
+  (cond 
+    [(empty? lhs) (error 'desugar-PySet! "should not be here")]
+    [(empty? (rest lhs)) (CSet! (desugar (first lhs)) e)]
+    [else (CSeq (CSet! (desugar (first lhs)) e) (desugar-PySet!-aux (rest lhs)  (first lhs)))]))
+
+
+(define (desugar-PySet!-aux [lhs : (listof PyExpr)] [s : PyExpr]) : CExp
+  (cond 
+    [(empty? lhs) (error 'desugar-PySet! "should not be here")]
+    [(empty? (rest lhs)) (CSet! (desugar (first lhs)) (desugar s))]
+    [else (CSeq (CSet! (desugar (first lhs)) (desugar s)) (desugar-PySet!-aux (rest lhs) (first lhs)))]))
+
+
+(define (desugar-PyCompare [left : PyExpr] [ops : (listof symbol) ] [comparators : (listof  PyExpr)])  : CExp
+  (cond 
+    [(empty? ops) (error 'desugar-PyCompare "should not be here")]
+    
+    [(empty? (rest ops)) (CCompare (first ops) (desugar left) (desugar (first comparators)) )]
+    
+    [else
+     (CBoolOp 'and (CCompare (first ops) (desugar left) (desugar (first comparators)) )
+              (desugar-PyCompare (first comparators) (rest ops) (rest comparators)))]))
+
+
+
+(define (desugar-bool-op [op : symbol] [ls : (listof PyExpr)]) : CExp
+  (cond
+    [(empty? ls) (error 'desugar-bool-op "no operand")]
+    [(empty? (rest ls)) (desugar (first ls))]
+    [else (CBoolOp op (desugar (first ls) ) (desugar-bool-op op (rest ls)))]))

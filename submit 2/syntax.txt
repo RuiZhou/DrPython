@@ -1,0 +1,144 @@
+#hasheq((nodetype . "Module")
+        (body
+         .
+         (#hasheq((name . "MyClass")
+                  (nodetype . "ClassDef")
+                  (body
+                   .
+                   (#hasheq((value . #hasheq((n . 4) (nodetype . "Num")))
+                            (nodetype . "Assign")
+                            (targets
+                             .
+                             (#hasheq((id . "i")
+                                      (nodetype . "Name")
+                                      (ctx . #hasheq((nodetype . "Store")))))))
+                    #hasheq((test
+                             .
+                             #hasheq((id . "True")
+                                     (nodetype . "Name")
+                                     (ctx . #hasheq((nodetype . "Load")))))
+                            (nodetype . "If")
+                            (body
+                             .
+                             (#hasheq((value
+                                       .
+                                       #hasheq((n . 5) (nodetype . "Num")))
+                                      (nodetype . "Assign")
+                                      (targets
+                                       .
+                                       (#hasheq((id . "a")
+                                                (nodetype . "Name")
+                                                (ctx
+                                                 .
+                                                 #hasheq((nodetype
+                                                          .
+                                                          "Store")))))))
+                              #hasheq((value
+                                       .
+                                       #hasheq((args
+                                                .
+                                                (#hasheq((s . "^_^")
+                                                         (nodetype . "Str"))))
+                                               (nodetype . "Call")
+                                               (keywords . ())
+                                               (kwargs . #\nul)
+                                               (starargs . #\nul)
+                                               (func
+                                                .
+                                                #hasheq((id . "print")
+                                                        (nodetype . "Name")
+                                                        (ctx
+                                                         .
+                                                         #hasheq((nodetype
+                                                                  .
+                                                                  "Load")))))))
+                                      (nodetype . "Expr"))))
+                            (orelse
+                             .
+                             (#hasheq((value
+                                       .
+                                       #hasheq((n . 6) (nodetype . "Num")))
+                                      (nodetype . "Assign")
+                                      (targets
+                                       .
+                                       (#hasheq((id . "b")
+                                                (nodetype . "Name")
+                                                (ctx
+                                                 .
+                                                 #hasheq((nodetype
+                                                          .
+                                                          "Store"))))))))))
+                    #hasheq((args
+                             .
+                             #hasheq((args
+                                      .
+                                      (#hasheq((arg . "self")
+                                               (nodetype . "arg")
+                                               (annotation . #\nul))))
+                                     (nodetype . "arguments")
+                                     (defaults . ())
+                                     (kwargannotation . #\nul)
+                                     (vararg . #\nul)
+                                     (kwarg . #\nul)
+                                     (varargannotation . #\nul)
+                                     (kw_defaults . ())
+                                     (kwonlyargs . ())))
+                            (name . "f")
+                            (nodetype . "FunctionDef")
+                            (body
+                             .
+                             (#hasheq((value
+                                       .
+                                       #hasheq((s . "hello world")
+                                               (nodetype . "Str")))
+                                      (nodetype . "Return"))))
+                            (decorator_list . ())
+                            (returns . #\nul))
+                    #hasheq((args
+                             .
+                             #hasheq((args
+                                      .
+                                      (#hasheq((arg . "this")
+                                               (nodetype . "arg")
+                                               (annotation . #\nul))))
+                                     (nodetype . "arguments")
+                                     (defaults . ())
+                                     (kwargannotation . #\nul)
+                                     (vararg . #\nul)
+                                     (kwarg . #\nul)
+                                     (varargannotation . #\nul)
+                                     (kw_defaults . ())
+                                     (kwonlyargs . ())))
+                            (name . "__init__")
+                            (nodetype . "FunctionDef")
+                            (body
+                             .
+                             (#hasheq((value
+                                       .
+                                       #hasheq((n . 1) (nodetype . "Num")))
+                                      (nodetype . "Assign")
+                                      (targets
+                                       .
+                                       (#hasheq((attr . "b")
+                                                (value
+                                                 .
+                                                 #hasheq((id . "this")
+                                                         (nodetype . "Name")
+                                                         (ctx
+                                                          .
+                                                          #hasheq((nodetype
+                                                                   .
+                                                                   "Load")))))
+                                                (nodetype . "Attribute")
+                                                (ctx
+                                                 .
+                                                 #hasheq((nodetype
+                                                          .
+                                                          "Store")))))))))
+                            (decorator_list . ())
+                            (returns . #\nul))))
+                  (decorator_list . ())
+                  (keywords . ())
+                  (kwargs . #\nul)
+                  (starargs . #\nul)
+                  (bases . ())))))

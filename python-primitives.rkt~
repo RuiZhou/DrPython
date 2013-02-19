@@ -1,0 +1,126 @@
+#lang plai-typed
+
+(require "python-core-syntax.rkt")
+(require "python-helper.rkt")
+ 
+#|
+
+Since there may end up being a large number of primitives that you
+implement for python, here is a suggested factoring into a separate
+file.  You can add new primitives here by adding new symbols to the
+dispatch.  You might also choose to add more than single-arity
+primitives here.
+
+|#
+
+(require (typed-in racket/base [display : (string -> void)]))
+
+(define (pretty [arg : CVal]) : string
+  (type-case CVal  arg
+    [VNum (n) (to-string n)]
+    [VStr (s) (list->string s)]
+    [VClosure (env args body mems);
+              ;(error 'prim "Can't print closures yet")]
+              (constr (list "closure, args count:" (number->string (length args)) ))]
+              
+    [VBool (b) 
+           (if b "true" "false")]
+    [VNone() ""]
+    [VDict(d) (constr (vdict-to-string d)) ]
+    [VMembers(t m) "a object with members"]
+    [VList(l m) (constr (list "[" (constr  (to-string-list l) )"]"))]))
+
+(define (to-string-list [l : ListVal]) : (listof string)
+  (cond
+    [(mt? l) (list)]
+    [(mt? (node-next l)) (list (pretty (VObj-value (node-value l))))]
+    [else
+     (cons  (constr (list (pretty (VObj-value (node-value l)))  ", " )) (to-string-list (node-next l)))]))
+
+   
+
+(define (vdict-to-string [d : (hashof VObjType VObjType) ]) : (listof string)
+  (local ([define keys      (hash-keys d)])
+    (cond
+      [(empty? keys) (list "")]
+      [else
+       (cons (constr
+              (list
+             ;  "items count" 
+              ; (number->string (length keys))
+               "\n {"
+               (pretty-obj   (first keys))
+               " : "
+               (pretty-obj (some-v (hash-ref d (first keys)))) 
+               " } "
+               ))
+             (vdict-to-string (hash-remove d (first keys))))])))
+
+
+         
+(define (pretty-obj [arg : VObjType]) : string
+  (cond 
+    [(symbol=? (VObj-type arg) 'NoneType) 
+     "None\n"]
+    [else 
+     (constr ( list  "<" 
+                     (symbol->string (VObj-type arg))
+                     "("
+                     (number->string (VObj-class_loc arg))
+                     ")"
+                     " object at "
+                     (number->string (VObj-id arg))
+                     " with value ("
+                     (pretty (VObj-value arg))
+                     ")>\n")
+             )]
+    
+    #|[(symbol=? (VObj-type arg) 'str) 
+     (constr ( list  (VObj-id arg) 
+                     (symbol->string (VObj-type arg))  
+                     (pretty (VObj-value arg))))]
+    
+    
+    
+    [(symbol=? (VObj-type arg) 'bool) 
+     (constr ( list  (VObj-id arg) 
+                     (symbol->string (VObj-type arg))  
+                     (pretty (VObj-value arg))))]
+    
+    |#
+    
+    ))
+
+(define (print [arg : VObjType]) : void
+  (display (pretty-obj arg)))
+
+
+
+(define (number->string [num : number]) : string
+  (cond 
+    [(< num 0) (string-append "-" (n->s (* -1 num)))]
+    [else (n->s num)]))
+
+
+
+(define (n->s [num : number]) : string
+  (local ([define  lsd  (modulo num 10)])
+    (local ([define lsdchar 
+              (cond 
+                [(= lsd 0) "0"]
+                [(= lsd 1) "1"]
+                [(= lsd 2) "2"]
+                [(= lsd 3) "3"]
+                [(= lsd 4) "4"]
+                [(= lsd 5) "5"]
+                [(= lsd 6) "6"]
+                [(= lsd 7) "7"]
+                [(= lsd 8) "8"]
+                [(= lsd 9) "9"])])
+      (cond 
+        [(= 0 (floor (/ num 10)))
+         lsdchar]
+        [else
+         (string-append (n->s (floor (/ num 10))) lsdchar)]))))
+
+ 

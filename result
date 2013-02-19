@@ -1,0 +1,234 @@
+74 tests succeeded.
+16 tests failed.
+== Output of failed tests ==
+=====================================================
+=   Results for all.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((nodetype . "GeneratorExp") (generators . (#hasheq((target . #hasheq((id . "x") (nodetype . "Name") (ctx . #hasheq((nodetype . "Store"))))) (nodetype . "comprehension") (iter . #hasheq((id . "S") (nodetype . "Name") (ctx . #hasheq((nodetype . "...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for any.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((nodetype . "GeneratorExp") (generators . (#hasheq((target . #hasheq((id . "x") (nodetype . "Name") (ctx . #hasheq((nodetype . "Store"))))) (nodetype . "comprehension") (iter . #hasheq((id . "S") (nodetype . "Name") (ctx . #hasheq((nodetype . "...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for filter.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: 
+Exception Fall through:
+Ex Form: RuntimeError
+Ex Msg: No -2 in Store: filter
+Stack:
+=====================================================
+=   Results for iter-classes.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((body . (#hasheq((body . (#hasheq((nodetype . "Assign") (value . #hasheq((args . (#hasheq((id . "it") (nodetype . "Name") (ctx . #hasheq((nodetype . "Load")))))) (nodetype . "Call") (keywords . ()) (kwargs . #\nul) (starargs . #\nul) (func . #h...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for iter-comprehensions.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((body . (#hasheq((body . (#hasheq((body . (#hasheq((nodetype . "Expr") (value . #hasheq((args . (#hasheq((nodetype . "Tuple") (ctx . #hasheq((nodetype . "Load"))) (elts . (#hasheq((id . "i") (nodetype . "Name") (ctx . #hasheq((nodetype . "Load"...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for iter-misc.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((body . (#hasheq((body . (#hasheq((nodetype . "Assign") (value . #hasheq((args . (#hasheq((id . "it") (nodetype . "Name") (ctx . #hasheq((nodetype . "Load")))))) (nodetype . "Call") (keywords . ()) (kwargs . #\nul) (starargs . #\nul) (func . #h...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for iter-simple.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((body . (#hasheq((body . (#hasheq((nodetype . "Assign") (value . #hasheq((args . (#hasheq((id . "it") (nodetype . "Name") (ctx . #hasheq((nodetype . "Load")))))) (nodetype . "Call") (keywords . ()) (kwargs . #\nul) (starargs . #\nul) (func . #h...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for iter-stop.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+error: contract violation
+  expected: string?
+  given: '#hasheq((body . (#hasheq((nodetype . "Assign") (value . #hasheq((args . (#hasheq((id . "a") (nodetype . "Name") (ctx . #hasheq((nodetype . "Load")))))) (nodetype . "Call") (keywords . ()) (kwargs . #\nul) (starargs . #\nul) (func . #hasheq((id . "iter"...
+  argument position: 2nd
+  other arguments...:
+   'parse
+=====================================================
+=   Results for range-errs.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: 
+Exception Fall through:
+Ex Form: Exception
+Ex Msg: TypeError
+Stack:
+=====================================================
+=   Results for locals-class.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+#(struct:VError #(struct:VObj 5375 RuntimeError 5349 #(struct:VStr (N o   - 2   i n   S t o r e :   l o c a l s))))
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: Syntax Error162
+=====================================================
+=   Results for locals-function.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: 
+Exception Fall through:
+Ex Form: RuntimeError
+Ex Msg: No -2 in Store: locals
+Stack:
+=====================================================
+=   Results for nesting-through-class.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: Not a closure
+=====================================================
+=   Results for nonlocal-class.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: 
+Exception Fall through:
+Ex Form: RuntimeError
+Ex Msg: No -2 in Store: __class__
+Stack:
+=====================================================
+=   Results for nonlocal-function.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+set: immediate value
+=====================================================
+=   Results for unbound-local.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: 
+Exception Fall through:
+Ex Form: RuntimeError
+Ex Msg: No -2 in Store: UnboundLocalError
+Stack:
+=====================================================
+=   Results for test-super.py   =
+=====================================================
+=== Expected stdout ===
+
+=== Actual stdout ===
+#(struct:VClosure #hash((list . 6696) (abs . 6728) (max . 6732) (min . 6730) (print . 6713) (range . 6702) (str . 6688) (bool . 6690) (x . 5371) (f . 6115) (set . 6698) (int . 6676) (tuple . 6700) (float . 6682) (True . 6714) (dict . 6704) (ZeroDivisionError . 6718) (Exception . 6717) (None . 6716) (False . 6715) (KeyError . 6722) (AttributeError . 6721) (TypeError . 6720) (IndexError . 6719) (len . 6726) (ValueError . 6723) (RuntimeError . 6724) (___assertEqual . 6736) (___assertFalse . 6735) (___assertTrue . 6734) (callable . 6733) (___assertNotIn . 6740) (___assertIn . 6739) (___assertIsNot . 6738) (___assertIs . 6737) (isinstance . 6742) (___assertRaises . 6741) (temp-func . 6116) (inc . 5954) (plus10 . 5953) (varnames . 5368) (make_adder5 . 5955)) () #(struct:CInstance A 6743) #hash((list . 6696) (abs . 6728) (max . 6732) (min . 6730) (print . 6713) (range . 6702) (str . 6688) (bool . 6690) (x . 5371) (f . 6744) (set . 6698) (int . 6676) (tuple . 6700) (float . 6682) (True . 6714) (dict . 6704) (ZeroDivisionError . 6718) (Exception . 6717) (None . 6716) (False . 6715) (KeyError . 6722) (AttributeError . 6721) (TypeError . 6720) (IndexError . 6719) (len . 6726) (ValueError . 6723) (RuntimeError . 6724) (___assertEqual . 6736) (___assertFalse . 6735) (___assertTrue . 6734) (callable . 6733) (___assertNotIn . 6740) (___assertIn . 6739) (___assertIsNot . 6738) (___assertIs . 6737) (isinstance . 6742) (___assertRaises . 6741) (temp-func . 6747) (inc . 5954) (plus10 . 5953) (varnames . 5368) (make_adder5 . 5955) (cm . 6746)))#(struct:VClosure #hash((list . 6696) (abs . 6728) (max . 6732) (min . 6730) (print . 6713) (range . 6702) (str . 6688) (bool . 6690) (x . 5371) (f . 6115) (set . 6698) (int . 6676) (tuple . 6700) (float . 6682) (True . 6714) (dict . 6704) (ZeroDivisionError . 6718) (Exception . 6717) (None . 6716) (False . 6715) (KeyError . 6722) (AttributeError . 6721) (TypeError . 6720) (IndexError . 6719) (len . 6726) (ValueError . 6723) (RuntimeError . 6724) (___assertEqual . 6736) (___assertFalse . 6735) (___assertTrue . 6734) (callable . 6733) (___assertNotIn . 6740) (___assertIn . 6739) (___assertIsNot . 6738) (___assertIs . 6737) (isinstance . 6742) (___assertRaises . 6741) (temp-func . 6116) (inc . 5954) (plus10 . 5953) (varnames . 5368) (make_adder5 . 5955)) () #(struct:CInstance A 6743) #hash((list . 6696) (abs . 6728) (max . 6732) (min . 6730) (print . 6713) (range . 6702) (str . 6688) (bool . 6690) (x . 5371) (f . 6744) (set . 6698) (int . 6676) (tuple . 6700) (float . 6682) (True . 6714) (dict . 6704) (ZeroDivisionError . 6718) (Exception . 6717) (None . 6716) (False . 6715) (KeyError . 6722) (AttributeError . 6721) (TypeError . 6720) (IndexError . 6719) (len . 6726) (ValueError . 6723) (RuntimeError . 6724) (___assertEqual . 6736) (___assertFalse . 6735) (___assertTrue . 6734) (callable . 6733) (___assertNotIn . 6740) (___assertIn . 6739) (___assertIsNot . 6738) (___assertIs . 6737) (isinstance . 6742) (___assertRaises . 6741) (temp-func . 6747) (inc . 5954) (plus10 . 5953) (varnames . 5368) (make_adder5 . 5955) (cm . 6746)))
+=== Expected stderr ===
+
+=== Actual stderr ===
+interp: not taken care of 333
